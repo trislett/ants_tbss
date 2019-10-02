@@ -5,7 +5,7 @@ from distutils.command.sdist import sdist
 from setuptools import setup
 
 PACKAGE_NAME = "ants_tbss"
-BUILD_REQUIRES = ["numpy", "nibabel", "argparse", "nibabel"]
+BUILD_REQUIRES = ["numpy", "nibabel", "argparse", "nibabel", 'json']
 
 CLASSIFIERS = ["Development Status :: 3 - Alpha",
   "Environment :: Console",
@@ -37,7 +37,6 @@ def configuration(parent_package = "", top_path = None):
     quiet = True)
 
   CONFIG.add_scripts(os.path.join("bin", PACKAGE_NAME))
-  CONFIG.add_scripts(os.path.join("bin", "tm_slices"))
   CONFIG.add_subpackage(PACKAGE_NAME)
 
   return CONFIG

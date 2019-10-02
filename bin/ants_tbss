@@ -4,54 +4,23 @@ import os
 import numpy as np
 import argparse
 import nibabel as nib
-from skimage.morphology import binary_erosion
+import json
 
-DESCRIPTION = "Registers FA to stdFA."
-
-def get_wildcard(searchstring, printarray = False): # super dirty
-	tmp_name = 'tmp_wildcard_%d' % np.random.randint(100000)
-	os.system('echo %s > %s' % (searchstring, tmp_name))
-	outstring = np.genfromtxt(tmp_name, dtype=str)
-	os.system('rm %s' % tmp_name)
-	if outstring.ndim == 0:
-		return str(outstring)
-	else:
-		print("Multiple wildcards found ['%s' length = %d]. Outputting an array." % (searchstring, len(outstring)))
-		if printarray:
-			print (outstring)
-		return outstring
-
-def antsLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None):
-	if not outdir:
-		outdir = ''
-	else:
-		if outdir[-1] != "/":
-			outdir = outdir + "/"
-	ants_cmd = ('export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=%d; antsRegistration -d 3 -r [ %s , %s, 1] -t Rigid[0.1] -m MI[ %s , %s , 1, 32] --convergence [1000x500x250x100,1e-6,10] --shrink-factors 8x4x2x1 --smoothing-sigmas 3x2x1x0vox -o [%s%s_, %s%s.nii.gz] --float' % (numthreads, reference, mov, reference, mov, outdir, out_basename, outdir, out_basename))
-	return ants_cmd
-
-def antsNonLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None):
-	if not outdir:
-		outdir = ''
-	else:
-		if outdir[-1] != "/":
-			outdir = outdir + "/"
-	ants_cmd = ('export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=%d; antsRegistration -d 3 --transform SyN[0.1,3,0] -m MI[ %s , %s , 1, 32] --convergence [100x70x50x20,1e-6,10] --shrink-factors 8x4x2x1 --smoothing-sigmas 3x2x1x0vox -o [%s%s_, %s%s.nii.gz]' % (numthreads,reference, mov, outdir, out_basename, outdir, out_basename))
-	return ants_cmd
-
-def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None):
-	warps = np.array(warps)
-	if not outdir:
-		outdir = ''
-	else:
-		if outdir[-1] != "/":
-			outdir = outdir + "/"
-	ants_cmd = ('antsApplyTransforms -d 3 -r %s -i %s -e 0 -o %s%s --float' % (reference, mov, outdir, outname))
-	for i in range(len(warps)):
-		ants_cmd = ants_cmd + (' -t %s' % warps[i])
-	return ants_cmd
+DESCRIPTION = "Simple tbss implementation with ANTs and T1w registration to template."
 
 def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION)):
+	registration = parser.add_mutually_exclusive_group(required=True)
+	registration.add_argument("-ar", "--antsregtotemplate", 
+		nargs = 2,
+		help = "Register B0 to native T1w brain image. -ar {B0 list} {T1w brain list}",
+		metavar = 'str')
+	registration.add_argument("-j", "--jsontransformlist", 
+		nargs = 1,
+		help = "-j {json list}",
+		metavar = 'str')
+	parser.add_argument("-l", "--dwimetriclist", 
+		nargs='+',
+		help="-l {fa_list}")
 	parser.add_argument("-t","--threshold",
 		nargs=1,
 		help="Set threshold level. Default: %(default)s)",
@@ -61,23 +30,16 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 		nargs=1,
 		default=['12'],
 		help="multithreading")
-	parser.add_argument("-std", "--standardimage", 
+	parser.add_argument("-std", "--templateimage", 
 		nargs=1,
-		default=['/mnt/mbServerData/software/APPLICATIONS/FSL_6.0.2/data/standard/MNI152_T1_1mm_brain.nii.gz'],
-		help="Standard image. Default: %(default)s)")
-	parser.add_argument("-l", "--dwilist", 
-		nargs='+',
-		help="")
-	step = parser.add_mutually_exclusive_group(required=True)
-	step.add_argument("--dwi2tw1", 
-		nargs = 3,
-		help = "Register B0 to native T1w brain image. --dwi2tw1 {B0 list} {T1w brain list} {FA_list}",
-		metavar = 'str')
-	step.add_argument("--tbss",
-#		nargs = 1,
-		action = 'store_true',
-		help = "FA list")
-
+		default=['%s/data/standard/MNI152_T1_1mm_brain.nii.gz' % os.environ['FSLDIR']],
+		metavar=('img'),
+		help="Template (standard) image. Default: %(default)s). -std PATH/TO/TEMPLATE.nii.gz")
+	parser.add_argument("--searchrulemask", 
+		nargs=1,
+		default=['%s/data/standard/LowerCingulum_1mm.nii.gz' % os.environ['FSLDIR']],
+		metavar=('img'),
+		help="Search rule mask for skeletonization. Default: %(default)s). -std PATH/TO/SEARCH_RULE_MASK.nii.gz")
 
 	return parser
 
@@ -86,42 +48,48 @@ def run(opts):
 	thresh = float(opts.threshold[0])
 	num_threads = int(opts.numthreads[0])
 	std_brain = opts.standardimage[0]
+	current_dir = os.getcwd()
 
-	if opts.dwi2tw1:
-		B0_list = np.genfromtxt(opts.dwi2tw1[0], dtype=str)
-		T1_native_list = np.genfromtxt(opts.dwi2tw1[1], dtype=str)
-		FA_list = np.genfromtxt(opts.dwi2tw1[2], dtype=str)
+	assert "ANTSPATH" in os.environ, "The environment variable ANTSPATH must be declared."
+	ANTSPATH = os.environ['ANTSPATH']
+	assert "FSLDIR" in os.environ, "The environment variable FSLDIR must be declared."
+	FSLDIR = os.environ['FSLDIR']
+
+	if opts.antsregtotemplate:
+		# create empty warp list to populate
+		warp_list = []
+
+		# read list files
+		B0_list = np.genfromtxt(opts.antsregtotemplate[0], dtype=str)
+		T1_native_list = np.genfromtxt(opts.antsregtotemplate[1], dtype=str)
+
 		print("Running registration of B0 images -> T1w images -> template T1 image")
 		os.system("mkdir -p reg")
-		os.system("mkdir -p FA_native")
-		os.system("mkdir -p FA")
 
 		assert len(B0_list) == len(T1_native_list), "The image lists are not of equal length."
 
-		assert len(B0_list) == len(FA_list), "The image lists are not of equal length."
-
 		for i, b0 in enumerate(B0_list):
+			temp_transformation = {}
 			b0_name = os.path.basename(b0)[:-7]
 			t1_name = os.path.basename(T1_native_list[i])[:-7]
-			fa_name = os.path.basename(FA_list[i])[:-7]
+
 			mask_name = "reg/%s_mask.nii.gz" % b0_name
 			mask_name_t1 = "reg/%s_mask_to_natT1.nii.gz" % b0_name
 			mask_name_std = "reg/%s_mask_to_stdT1.nii.gz" % b0_name
 			t1_mask_name = "reg/%s_mask.nii.gz" % t1_name
 			t1_mask_name_std = "reg/%s_mask_to_stdT1.nii.gz" % t1_name
 
-			FA_nat = 'FA_native/%s_to_natT1.nii.gz' % fa_name
-			FA_std = 'FA/%s_to_stdT1.nii.gz' % fa_name
 
 			ref = T1_native_list[i]
 			mov = b0
 			log = "reg/lin%s_to_natT1.log" % b0_name
 			out = "reg/%s_to_natT1.nii.gz" % b0_name
 			os.system("fslmaths %s -bin %s" % (mov, mask_name))
-#			os.system("fslmaths %s -bin -dilD -dilD -sub 1 -abs -add %s %s -odt char" % (mask_name,mask_name, mask_name))
 
 			# linear reg of B0 to T1w native image
 			os.system("%s > %s" % (antsLinearRegCmd(int(num_threads), ref, mov, out), log))
+			temp_transformation['linB0_to_natT1'] = ['%/%s_0GenericAffine.mat' % (current_dir, out)]
+
 			# move the mask
 			os.system(antsApplyTransformCmd(reference = ref, mov = mask_name, warps = ['%s_0GenericAffine.mat' % out], outname = mask_name_t1, outdir = None))
 			img = nib.load(mask_name_t1)
@@ -129,16 +97,13 @@ def run(opts):
 			img_data = np.round(img_data)
 			nib.save(nib.Nifti1Image(img_data,img.affine),mask_name_t1)
 
-			# move FA
-			os.system(antsApplyTransformCmd(reference = ref, mov = FA_list[i], warps = ['%s_0GenericAffine.mat' % out], outname = FA_nat, outdir = None))
-
-
 			# linear/non-linear reg T1 to std
 			ref = std_brain
 			mov = T1_native_list[i]
 			log = "reg/lin%s_to_stdT1.log" % t1_name
 			out = "reg/lin%s_to_stdT1.nii.gz" % t1_name
 			os.system("%s > %s" % (antsLinearRegCmd(int(num_threads), ref, mov, out), log))
+
 			# get mask of T1
 			os.system("fslmaths %s -bin %s" % (mov, t1_mask_name))
 
@@ -150,6 +115,13 @@ def run(opts):
 
 			# move FA mask
 			warps = ['%s_0Warp.nii.gz' % (out), 'reg/lin%s_to_stdT1.nii.gz_0GenericAffine.mat' % (t1_name)]
+			temp_transformation['T1to_stdT1'] = ['%s/%s_0Warp.nii.gz' % (current_dir, out), '%s/reg/lin%s_to_stdT1.nii.gz_0GenericAffine.mat' % (current_dir, t1_name)]
+
+			# Write out the processing settings
+			with open('%s_warps.json' % b0_name, 'w') as outfile:
+				json.dump(processing_settings, outfile, indent=3, sort_keys=True)
+			warp_list.append('%s_warps.json' % b0_name)
+
 			os.system(antsApplyTransformCmd(reference = ref, mov = mask_name_t1, warps = warps, outname = mask_name_std, outdir = None))
 			img = nib.load(mask_name_std)
 			img_data = img.get_data()
@@ -162,10 +134,29 @@ def run(opts):
 			img_data = np.round(img_data)
 			nib.save(nib.Nifti1Image(img_data,img.affine),t1_mask_name_std)
 
-			# move FA
-			os.system(antsApplyTransformCmd(reference = ref, mov = FA_nat, warps = warps, outname = FA_std, outdir = None))
+		warp_list = np.array(warp_list, dtype = str)
+
+	if opts.jsontransformlist:
+		warp_list = np.genfromtxt(opts.jsontransformlist[0], dtype=str)
 
 	if opts.tbss:
+		FA_list = np.genfromtxt(opts.tbss[0], dtype=str)
+		fa_name = os.path.basename(FA_list[i])[:-7]
+
+		os.system("mkdir -p FA_native")
+		os.system("mkdir -p FA")
+
+		FA_nat = 'FA_native/%s_to_natT1.nii.gz' % fa_name
+		FA_std = 'FA/%s_to_stdT1.nii.gz' % fa_name
+
+		# move FA
+		os.system(antsApplyTransformCmd(reference = ref, mov = FA_list[i], warps = ['%s_0GenericAffine.mat' % out], outname = FA_nat, outdir = None))
+
+		# move FA
+		os.system(antsApplyTransformCmd(reference = ref, mov = FA_nat, warps = warps, outname = FA_std, outdir = None))
+
+
+
 		tbssdir = 'TBSS'
 		os.system("mkdir %s" % tbssdir)
 
@@ -220,7 +211,7 @@ def run(opts):
 			img_data = nib.load(img).get_data()
 			img_data[mask_index==False] = 0
 			nib.save(nib.Nifti1Image(img_data,affine),img_name)
-			os.system('echo tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (thresh,os.environ['FSLDIR'], img_name, img_name_skel))
+			os.system('echo tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (thresh, os.environ['FSLDIR'], img_name, img_name_skel))
 		os.system("cat cmd_skel_FA_parallel | parallel -j %d" % (num_threads))
 
 if __name__ == "__main__":
