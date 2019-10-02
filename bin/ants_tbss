@@ -1,0 +1,229 @@
+#!/usr/bin/env python
+
+import os
+import numpy as np
+import argparse
+import nibabel as nib
+from skimage.morphology import binary_erosion
+
+DESCRIPTION = "Registers FA to stdFA."
+
+def get_wildcard(searchstring, printarray = False): # super dirty
+	tmp_name = 'tmp_wildcard_%d' % np.random.randint(100000)
+	os.system('echo %s > %s' % (searchstring, tmp_name))
+	outstring = np.genfromtxt(tmp_name, dtype=str)
+	os.system('rm %s' % tmp_name)
+	if outstring.ndim == 0:
+		return str(outstring)
+	else:
+		print("Multiple wildcards found ['%s' length = %d]. Outputting an array." % (searchstring, len(outstring)))
+		if printarray:
+			print (outstring)
+		return outstring
+
+def antsLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None):
+	if not outdir:
+		outdir = ''
+	else:
+		if outdir[-1] != "/":
+			outdir = outdir + "/"
+	ants_cmd = ('export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=%d; antsRegistration -d 3 -r [ %s , %s, 1] -t Rigid[0.1] -m MI[ %s , %s , 1, 32] --convergence [1000x500x250x100,1e-6,10] --shrink-factors 8x4x2x1 --smoothing-sigmas 3x2x1x0vox -o [%s%s_, %s%s.nii.gz] --float' % (numthreads, reference, mov, reference, mov, outdir, out_basename, outdir, out_basename))
+	return ants_cmd
+
+def antsNonLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None):
+	if not outdir:
+		outdir = ''
+	else:
+		if outdir[-1] != "/":
+			outdir = outdir + "/"
+	ants_cmd = ('export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=%d; antsRegistration -d 3 --transform SyN[0.1,3,0] -m MI[ %s , %s , 1, 32] --convergence [100x70x50x20,1e-6,10] --shrink-factors 8x4x2x1 --smoothing-sigmas 3x2x1x0vox -o [%s%s_, %s%s.nii.gz]' % (numthreads,reference, mov, outdir, out_basename, outdir, out_basename))
+	return ants_cmd
+
+def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None):
+	warps = np.array(warps)
+	if not outdir:
+		outdir = ''
+	else:
+		if outdir[-1] != "/":
+			outdir = outdir + "/"
+	ants_cmd = ('antsApplyTransforms -d 3 -r %s -i %s -e 0 -o %s%s --float' % (reference, mov, outdir, outname))
+	for i in range(len(warps)):
+		ants_cmd = ants_cmd + (' -t %s' % warps[i])
+	return ants_cmd
+
+def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION)):
+	parser.add_argument("-t","--threshold",
+		nargs=1,
+		help="Set threshold level. Default: %(default)s)",
+		default=['0.2'],
+		metavar=('float'))
+	parser.add_argument("-nt", "--numthreads", 
+		nargs=1,
+		default=['12'],
+		help="multithreading")
+	parser.add_argument("-std", "--standardimage", 
+		nargs=1,
+		default=['/mnt/mbServerData/software/APPLICATIONS/FSL_6.0.2/data/standard/MNI152_T1_1mm_brain.nii.gz'],
+		help="Standard image. Default: %(default)s)")
+	parser.add_argument("-l", "--dwilist", 
+		nargs='+',
+		help="")
+	step = parser.add_mutually_exclusive_group(required=True)
+	step.add_argument("--dwi2tw1", 
+		nargs = 3,
+		help = "Register B0 to native T1w brain image. --dwi2tw1 {B0 list} {T1w brain list} {FA_list}",
+		metavar = 'str')
+	step.add_argument("--tbss",
+#		nargs = 1,
+		action = 'store_true',
+		help = "FA list")
+
+
+	return parser
+
+def run(opts):
+
+	thresh = float(opts.threshold[0])
+	num_threads = int(opts.numthreads[0])
+	std_brain = opts.standardimage[0]
+
+	if opts.dwi2tw1:
+		B0_list = np.genfromtxt(opts.dwi2tw1[0], dtype=str)
+		T1_native_list = np.genfromtxt(opts.dwi2tw1[1], dtype=str)
+		FA_list = np.genfromtxt(opts.dwi2tw1[2], dtype=str)
+		print("Running registration of B0 images -> T1w images -> template T1 image")
+		os.system("mkdir -p reg")
+		os.system("mkdir -p FA_native")
+		os.system("mkdir -p FA")
+
+		assert len(B0_list) == len(T1_native_list), "The image lists are not of equal length."
+
+		assert len(B0_list) == len(FA_list), "The image lists are not of equal length."
+
+		for i, b0 in enumerate(B0_list):
+			b0_name = os.path.basename(b0)[:-7]
+			t1_name = os.path.basename(T1_native_list[i])[:-7]
+			fa_name = os.path.basename(FA_list[i])[:-7]
+			mask_name = "reg/%s_mask.nii.gz" % b0_name
+			mask_name_t1 = "reg/%s_mask_to_natT1.nii.gz" % b0_name
+			mask_name_std = "reg/%s_mask_to_stdT1.nii.gz" % b0_name
+			t1_mask_name = "reg/%s_mask.nii.gz" % t1_name
+			t1_mask_name_std = "reg/%s_mask_to_stdT1.nii.gz" % t1_name
+
+			FA_nat = 'FA_native/%s_to_natT1.nii.gz' % fa_name
+			FA_std = 'FA/%s_to_stdT1.nii.gz' % fa_name
+
+			ref = T1_native_list[i]
+			mov = b0
+			log = "reg/lin%s_to_natT1.log" % b0_name
+			out = "reg/%s_to_natT1.nii.gz" % b0_name
+			os.system("fslmaths %s -bin %s" % (mov, mask_name))
+#			os.system("fslmaths %s -bin -dilD -dilD -sub 1 -abs -add %s %s -odt char" % (mask_name,mask_name, mask_name))
+
+			# linear reg of B0 to T1w native image
+			os.system("%s > %s" % (antsLinearRegCmd(int(num_threads), ref, mov, out), log))
+			# move the mask
+			os.system(antsApplyTransformCmd(reference = ref, mov = mask_name, warps = ['%s_0GenericAffine.mat' % out], outname = mask_name_t1, outdir = None))
+			img = nib.load(mask_name_t1)
+			img_data = img.get_data()
+			img_data = np.round(img_data)
+			nib.save(nib.Nifti1Image(img_data,img.affine),mask_name_t1)
+
+			# move FA
+			os.system(antsApplyTransformCmd(reference = ref, mov = FA_list[i], warps = ['%s_0GenericAffine.mat' % out], outname = FA_nat, outdir = None))
+
+
+			# linear/non-linear reg T1 to std
+			ref = std_brain
+			mov = T1_native_list[i]
+			log = "reg/lin%s_to_stdT1.log" % t1_name
+			out = "reg/lin%s_to_stdT1.nii.gz" % t1_name
+			os.system("%s > %s" % (antsLinearRegCmd(int(num_threads), ref, mov, out), log))
+			# get mask of T1
+			os.system("fslmaths %s -bin %s" % (mov, t1_mask_name))
+
+			# non-linear
+			mov = out
+			log = "reg/%s_to_stdT1.log" % t1_name
+			out = "reg/%s_to_stdT1.nii.gz" % t1_name
+			os.system("%s > %s" % (antsNonLinearRegCmd(int(num_threads), ref, mov, out), log))
+
+			# move FA mask
+			warps = ['%s_0Warp.nii.gz' % (out), 'reg/lin%s_to_stdT1.nii.gz_0GenericAffine.mat' % (t1_name)]
+			os.system(antsApplyTransformCmd(reference = ref, mov = mask_name_t1, warps = warps, outname = mask_name_std, outdir = None))
+			img = nib.load(mask_name_std)
+			img_data = img.get_data()
+			img_data = np.round(img_data)
+			nib.save(nib.Nifti1Image(img_data,img.affine),mask_name_std)
+			# move T1 mask
+			os.system(antsApplyTransformCmd(reference = ref, mov = t1_mask_name, warps = warps, outname = t1_mask_name_std, outdir = None))
+			img = nib.load(t1_mask_name_std)
+			img_data = img.get_data()
+			img_data = np.round(img_data)
+			nib.save(nib.Nifti1Image(img_data,img.affine),t1_mask_name_std)
+
+			# move FA
+			os.system(antsApplyTransformCmd(reference = ref, mov = FA_nat, warps = warps, outname = FA_std, outdir = None))
+
+	if opts.tbss:
+		tbssdir = 'TBSS'
+		os.system("mkdir %s" % tbssdir)
+
+		FA_std = get_wildcard('FA/*FA_to_stdT1.nii.gz')
+		# build all_FA_mask
+		masks = get_wildcard('reg/*_mask_to_stdT1.nii.gz')
+		# check lengths
+		assert len(FA_std)*2 == len(masks), "The image lists are not equal to the number of masks."
+
+		#get first mask
+		tmp = nib.load(masks[0])
+		affine = tmp.affine
+		outmask = tmp.get_data()
+		for mask in masks:
+			outmask *= nib.load(mask).get_data()
+		nib.save(nib.Nifti1Image(outmask,affine),"TBSS/mean_FA_mask.nii.gz")
+
+		#mean FA
+		subject_list = " ".join(FA_std)
+		os.system('AverageImages 3 TBSS/average_FA.nii.gz 0 %s' % subject_list)
+		os.system('fslmaths TBSS/average_FA.nii.gz -mul TBSS/mean_FA_mask.nii.gz TBSS/mean_FA.nii.gz')
+
+		#skeletonise mean FA
+		os.system('tbss_skeleton -i TBSS/mean_FA -o TBSS/mean_FA_skeleton')
+
+		#theshold
+		os.system('fslmaths TBSS/mean_FA_skeleton -thr %s -bin TBSS/mean_FA_skeleton_mask' % thresh)
+
+		#build all_FA image
+		mask_index = outmask!=0
+#		x, y, z = outmask.shape
+
+#		arr_FA = []
+#		for img in FA_std:
+#			arr_FA.append(nib.load(img).get_data()[mask_index])
+#		arr_FA = np.array(arr_FA).T
+#		out_allfa = np.zeros((x,y,z,arr_FA.shape[-1]))
+#		out_allfa[mask_index] = arr_FA
+
+		os.system('fslmaths TBSS/mean_FA_mask -mul -1 -add 1 -add TBSS/mean_FA_skeleton_mask TBSS/mean_FA_skeleton_mask_dst')
+		os.system('distancemap -i TBSS/mean_FA_skeleton_mask_dst -o TBSS/mean_FA_skeleton_mask_dst')
+
+
+		os.system("mkdir TBSS/FA_masked")
+		os.system("mkdir TBSS/FA_skeleton")
+
+		masked_img_list = []
+		for img in FA_std:
+			img_name = "TBSS/FA_masked/%s" % os.path.basename(img)
+			img_name_skel = "TBSS/FA_skeleton/skel_%s" % os.path.basename(img)
+			masked_img_list.append(img_name)
+			img_data = nib.load(img).get_data()
+			img_data[mask_index==False] = 0
+			nib.save(nib.Nifti1Image(img_data,affine),img_name)
+			os.system('echo tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (thresh,os.environ['FSLDIR'], img_name, img_name_skel))
+		os.system("cat cmd_skel_FA_parallel | parallel -j %d" % (num_threads))
+
+if __name__ == "__main__":
+	parser = getArgumentParser()
+	opts = parser.parse_args()
+	run(opts)
