@@ -181,7 +181,7 @@ def run(opts):
 				std_masks.append(transform_files['t1_mask_name_std'])
 				T1_ref.append(transform_files['nativeT1'])
 
-		num_metrics = np.divide(len(opts.runtbss),2)
+		num_metrics = int(np.divide(len(opts.runtbss),2))
 		for m in range(num_metrics):
 			METRICS_list = np.genfromtxt(opts.runtbss[int(m*2)])
 			METRIC = opts.runtbss[(int(m*2)+1)]
