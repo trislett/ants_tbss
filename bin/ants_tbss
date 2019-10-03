@@ -6,7 +6,9 @@ import argparse
 import nibabel as nib
 import json
 
-DESCRIPTION = "Simple TBSS (FSL) implementation with ANTs and T1w registration to template."
+from ants_tbss.functions import get_wildcard, antsLinearRegCmd, antsNonLinearRegCmd, antsApplyTransformCmd, antsBetCmd
+
+DESCRIPTION = "Just a TBSS (FSL) implementation with ANTs and T1w registration to template."
 
 def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION)):
 	registration = parser.add_mutually_exclusive_group(required=True)
@@ -22,8 +24,8 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 		nargs='+',
 		help="Input a text file of the directory locations of the images for each DWI metric that will be transformed into standard space. The first input must be the FA files. -l {fa_list} ...")
 	parser.add_argument("-r", "--runtbss", 
-		action='+',
-		help="For skeletonization of dwi metrics in template (standard) space, input a text file of the directory locations of the images. The first input must be for FA (or FA skeletonization has already been detected).")
+		nargs = '+',
+		help="For skeletonization of dwi metrics in template (standard) space, input a text file of the directory locations of the images and the metric name. The first input must be for FA (or the FA skeletonization has to be detected). -r {metric_list} {metric_name} ...")
 
 	# options
 	parser.add_argument("-ab","--runantsbet",
@@ -57,7 +59,7 @@ def run(opts):
 
 	thresh = float(opts.threshold[0])
 	num_threads = int(opts.numthreads[0])
-	std_brain = opts.standardimage[0]
+	std_brain = opts.templateimage[0]
 	current_dir = os.getcwd()
 
 	assert "ANTSPATH" in os.environ, "The environment variable ANTSPATH must be declared."
@@ -68,6 +70,7 @@ def run(opts):
 	if opts.antsregtotemplate:
 		# create empty warp list to populate
 		warp_list = []
+		mask_list = []
 
 		# read list files
 		B0_list = np.genfromtxt(opts.antsregtotemplate[0], dtype=str)
@@ -98,7 +101,7 @@ def run(opts):
 
 			# linear reg of B0 to T1w native image
 			os.system("%s > %s" % (antsLinearRegCmd(int(num_threads), ref, mov, out), log))
-			temp_transformation['linB0_to_natT1'] = ['%/%s_0GenericAffine.mat' % (current_dir, out)]
+			temp_transformation['linB0_to_natT1'] = ['%s/%s_0GenericAffine.mat' % (current_dir, out)]
 
 			# move the mask
 			os.system(antsApplyTransformCmd(reference = ref, mov = mask_name, warps = ['%s_0GenericAffine.mat' % out], outname = mask_name_t1, outdir = None))
@@ -128,9 +131,9 @@ def run(opts):
 			temp_transformation['T1to_stdT1'] = ['%s/%s_0Warp.nii.gz' % (current_dir, out), '%s/reg/lin%s_to_stdT1.nii.gz_0GenericAffine.mat' % (current_dir, t1_name)]
 
 			# Write out the processing settings
-			with open('%s_warps.json' % b0_name, 'w') as outfile:
-				json.dump(processing_settings, outfile, indent=3, sort_keys=True)
-			warp_list.append('%s_warps.json' % b0_name)
+			with open('reg/%s_warps.json' % b0_name, 'w') as outfile:
+				json.dump(temp_transformation, outfile, indent=3, sort_keys=True)
+			warp_list.append('reg/%s_warps.json' % b0_name)
 
 			os.system(antsApplyTransformCmd(reference = ref, mov = mask_name_t1, warps = warps, outname = mask_name_std, outdir = None))
 			img = nib.load(mask_name_std)
@@ -144,17 +147,52 @@ def run(opts):
 			img_data = np.round(img_data)
 			nib.save(nib.Nifti1Image(img_data,img.affine),t1_mask_name_std)
 
+			mask_list.append(mask_name_std)
+			mask_list.append(t1_mask_name_std)
+
+			temp_transformation['mask_name_std'] = mask_name_std
+			temp_transformation['t1_mask_name_std'] = t1_mask_name_std
+
 		warp_list = np.array(warp_list, dtype = str)
 
 	if opts.jsontransformlist:
 		warp_list = np.genfromtxt(opts.jsontransformlist[0], dtype=str)
 
-	if opts.tbss:
+	if opts.runtbss:
+
+		# Check runtbss inputs
+		assert len(opts.runtbss) % 2 == 0, "--runtbss must have an even number of inputs. e.g., -r FA_list FA MD_list MD."
+
+		# Check warp list length.
+		assert len(warp_list) == len(np.genfromtxt(opts.runtbss[0], dtype=str)), "The length the --runtbss inputs must match the number of warps."
+
+		linB0_to_natT1 = []
+		T1to_stdT1 = []
+		std_masks = []
+		for json_warp_file in warp_list:
+			with open(json_warp_file) as json_file:
+				transform_files = json.load(json_file)
+				linB0_to_natT1.append(transform_files['linB0_to_natT1'])
+				T1to_stdT1.append(transform_files['T1to_stdT1'])
+				std_masks.append(transform_files['mask_name_std'])
+				std_masks.append(transform_files['t1_mask_name_std'])
+
+		num_metrics = np.divide(len(opts.runtbss),2)
+		for i in range(num_metrics):
+			METRICS_list = np.genfromtxt(opts.runtbss[int(i*2)])
+			METRIC = opts.runtbss[(int(i*2)+1)]
+			if METRIC != 'FA':
+				assert (os.path.exists('TBSS/mean_FA_skeleton_mask_dst.nii.gz')), "FA skeletonization must be run first."
+
+			os.system("mkdir -p %s_native" % METRIC)
+			os.system("mkdir -p %s" % METRIC)
+
+
 		FA_list = np.genfromtxt(opts.tbss[0], dtype=str)
+
 		fa_name = os.path.basename(FA_list[i])[:-7]
 
-		os.system("mkdir -p FA_native")
-		os.system("mkdir -p FA")
+
 
 		FA_nat = 'FA_native/%s_to_natT1.nii.gz' % fa_name
 		FA_std = 'FA/%s_to_stdT1.nii.gz' % fa_name
@@ -164,8 +202,6 @@ def run(opts):
 
 		# move FA
 		os.system(antsApplyTransformCmd(reference = ref, mov = FA_nat, warps = warps, outname = FA_std, outdir = None))
-
-
 
 		tbssdir = 'TBSS'
 		os.system("mkdir %s" % tbssdir)
@@ -197,14 +233,6 @@ def run(opts):
 
 		#build all_FA image
 		mask_index = outmask!=0
-#		x, y, z = outmask.shape
-
-#		arr_FA = []
-#		for img in FA_std:
-#			arr_FA.append(nib.load(img).get_data()[mask_index])
-#		arr_FA = np.array(arr_FA).T
-#		out_allfa = np.zeros((x,y,z,arr_FA.shape[-1]))
-#		out_allfa[mask_index] = arr_FA
 
 		os.system('fslmaths TBSS/mean_FA_mask -mul -1 -add 1 -add TBSS/mean_FA_skeleton_mask TBSS/mean_FA_skeleton_mask_dst')
 		os.system('distancemap -i TBSS/mean_FA_skeleton_mask_dst -o TBSS/mean_FA_skeleton_mask_dst')
