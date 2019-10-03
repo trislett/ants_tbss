@@ -20,9 +20,6 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 		nargs = 1,
 		help = "-j {json list}",
 		metavar = 'str')
-	parser.add_argument("-l", "--dwimetriclist", 
-		nargs='+',
-		help="Input a text file of the directory locations of the images for each DWI metric that will be transformed into standard space. The first input must be the FA files. -l {fa_list} ...")
 	parser.add_argument("-r", "--runtbss", 
 		nargs = '+',
 		help="For skeletonization of dwi metrics in template (standard) space, input a text file of the directory locations of the images and the metric name. The first input must be for FA (or the FA skeletonization has to be detected). -r {metric_list} {metric_name} ...")
@@ -132,10 +129,7 @@ def run(opts):
 			warps = ['%s_0Warp.nii.gz' % (out), 'reg/lin%s_to_stdT1.nii.gz_0GenericAffine.mat' % (t1_name)]
 			temp_transformation['T1to_stdT1'] = ['%s/%s_0Warp.nii.gz' % (current_dir, out), '%s/reg/lin%s_to_stdT1.nii.gz_0GenericAffine.mat' % (current_dir, t1_name)]
 
-			# Write out the processing settings
-			with open('reg/%s_warps.json' % b0_name, 'w') as outfile:
-				json.dump(temp_transformation, outfile, indent=3, sort_keys=True)
-			warp_list.append('reg/%s_warps.json' % b0_name)
+
 
 			os.system(antsApplyTransformCmd(reference = ref, mov = mask_name_t1, warps = warps, outname = mask_name_std, outdir = None))
 			img = nib.load(mask_name_std)
@@ -154,6 +148,11 @@ def run(opts):
 
 			temp_transformation['mask_name_std'] = mask_name_std
 			temp_transformation['t1_mask_name_std'] = t1_mask_name_std
+
+			# Write out the processing settings
+			with open('reg/%s_warps.json' % b0_name, 'w') as outfile:
+				json.dump(temp_transformation, outfile, indent=3, sort_keys=True)
+			warp_list.append('reg/%s_warps.json' % b0_name)
 
 		warp_list = np.array(warp_list, dtype = str)
 
