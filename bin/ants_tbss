@@ -6,13 +6,13 @@ import argparse
 import nibabel as nib
 import json
 
-DESCRIPTION = "Simple tbss implementation with ANTs and T1w registration to template."
+DESCRIPTION = "Simple TBSS (FSL) implementation with ANTs and T1w registration to template."
 
 def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION)):
 	registration = parser.add_mutually_exclusive_group(required=True)
 	registration.add_argument("-ar", "--antsregtotemplate", 
 		nargs = 2,
-		help = "Register B0 to native T1w brain image. -ar {B0 list} {T1w brain list}",
+		help = "Register B0 to native T1w brain image. -ar {B0 list} {T1w list}",
 		metavar = 'str')
 	registration.add_argument("-j", "--jsontransformlist", 
 		nargs = 1,
@@ -20,7 +20,17 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 		metavar = 'str')
 	parser.add_argument("-l", "--dwimetriclist", 
 		nargs='+',
-		help="-l {fa_list}")
+		help="Input a text file of the directory locations of the images for each DWI metric that will be transformed into standard space. The first input must be the FA files. -l {fa_list} ...")
+	parser.add_argument("-r", "--runtbss", 
+		action='+',
+		help="For skeletonization of dwi metrics in template (standard) space, input a text file of the directory locations of the images. The first input must be for FA (or FA skeletonization has already been detected).")
+
+	# options
+	parser.add_argument("-ab","--runantsbet",
+		action = 'store_true',
+		help="Run ANTs bet on the T1w images. Use this if your T1 inputs are not already brain extracted. Arguably, ANTs does a must better brain extraction than FSL's bet or freesurfer's watershed.")
+
+	# settings
 	parser.add_argument("-t","--threshold",
 		nargs=1,
 		help="Set threshold level. Default: %(default)s)",
