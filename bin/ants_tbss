@@ -94,6 +94,8 @@ def run(opts):
 
 
 			ref = T1_native_list[i]
+			temp_transformation['nativeT1'] = T1_native_list[i]
+
 			mov = b0
 			log = "reg/lin%s_to_natT1.log" % b0_name
 			out = "reg/%s_to_natT1.nii.gz" % b0_name
@@ -169,6 +171,8 @@ def run(opts):
 		linB0_to_natT1 = []
 		T1to_stdT1 = []
 		std_masks = []
+		T1_ref = []
+		# read the json files containing the warps and mask files
 		for json_warp_file in warp_list:
 			with open(json_warp_file) as json_file:
 				transform_files = json.load(json_file)
@@ -176,81 +180,101 @@ def run(opts):
 				T1to_stdT1.append(transform_files['T1to_stdT1'])
 				std_masks.append(transform_files['mask_name_std'])
 				std_masks.append(transform_files['t1_mask_name_std'])
+				T1_ref.append(transform_files['nativeT1'])
 
 		num_metrics = np.divide(len(opts.runtbss),2)
-		for i in range(num_metrics):
-			METRICS_list = np.genfromtxt(opts.runtbss[int(i*2)])
-			METRIC = opts.runtbss[(int(i*2)+1)]
+		for m in range(num_metrics):
+			METRICS_list = np.genfromtxt(opts.runtbss[int(m*2)])
+			METRIC = opts.runtbss[(int(m*2)+1)]
 			if METRIC != 'FA':
 				assert (os.path.exists('TBSS/mean_FA_skeleton_mask_dst.nii.gz')), "FA skeletonization must be run first."
 
 			os.system("mkdir -p %s_native" % METRIC)
 			os.system("mkdir -p %s" % METRIC)
 
+			# transform the metric images to standard space
+			for i, metric_img in enumerate(METRICS_list):
+				metric_name = os.path.basename(metric_img)[:-7]
+				# set output names
+				metric_nat = '%s_native/%s_to_natT1.nii.gz' % (METRIC, metric_name)
+				metric_std = '%s/%s_to_stdT1.nii.gz' % (METRIC, metric_name)
 
-		FA_list = np.genfromtxt(opts.tbss[0], dtype=str)
+				# metric to native
+				ref = T1_ref[i]
+				mov = metric_img
+				warps = linB0_to_natT1[i]
+				os.system(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = metric_nat))
 
-		fa_name = os.path.basename(FA_list[i])[:-7]
-
-
-
-		FA_nat = 'FA_native/%s_to_natT1.nii.gz' % fa_name
-		FA_std = 'FA/%s_to_stdT1.nii.gz' % fa_name
-
-		# move FA
-		os.system(antsApplyTransformCmd(reference = ref, mov = FA_list[i], warps = ['%s_0GenericAffine.mat' % out], outname = FA_nat, outdir = None))
-
-		# move FA
-		os.system(antsApplyTransformCmd(reference = ref, mov = FA_nat, warps = warps, outname = FA_std, outdir = None))
-
-		tbssdir = 'TBSS'
-		os.system("mkdir %s" % tbssdir)
-
-		FA_std = get_wildcard('FA/*FA_to_stdT1.nii.gz')
-		# build all_FA_mask
-		masks = get_wildcard('reg/*_mask_to_stdT1.nii.gz')
-		# check lengths
-		assert len(FA_std)*2 == len(masks), "The image lists are not equal to the number of masks."
-
-		#get first mask
-		tmp = nib.load(masks[0])
-		affine = tmp.affine
-		outmask = tmp.get_data()
-		for mask in masks:
-			outmask *= nib.load(mask).get_data()
-		nib.save(nib.Nifti1Image(outmask,affine),"TBSS/mean_FA_mask.nii.gz")
-
-		#mean FA
-		subject_list = " ".join(FA_std)
-		os.system('AverageImages 3 TBSS/average_FA.nii.gz 0 %s' % subject_list)
-		os.system('fslmaths TBSS/average_FA.nii.gz -mul TBSS/mean_FA_mask.nii.gz TBSS/mean_FA.nii.gz')
-
-		#skeletonise mean FA
-		os.system('tbss_skeleton -i TBSS/mean_FA -o TBSS/mean_FA_skeleton')
-
-		#theshold
-		os.system('fslmaths TBSS/mean_FA_skeleton -thr %s -bin TBSS/mean_FA_skeleton_mask' % thresh)
-
-		#build all_FA image
-		mask_index = outmask!=0
-
-		os.system('fslmaths TBSS/mean_FA_mask -mul -1 -add 1 -add TBSS/mean_FA_skeleton_mask TBSS/mean_FA_skeleton_mask_dst')
-		os.system('distancemap -i TBSS/mean_FA_skeleton_mask_dst -o TBSS/mean_FA_skeleton_mask_dst')
+				# metric to template
+				ref = std_brain
+				mov = metric_nat
+				warps = T1to_stdT1[i]
+				os.system(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = metric_std))
 
 
-		os.system("mkdir TBSS/FA_masked")
-		os.system("mkdir TBSS/FA_skeleton")
+			#### Skeletonization ####
+			if METRIC == 'FA':
+				tbssdir = 'TBSS'
+				os.system("mkdir %s" % tbssdir)
+				FA_std = get_wildcard('FA/*FA_to_stdT1.nii.gz')
+				# build all_FA_mask
+				masks = std_masks
+				# check lengths
+				assert len(FA_std)*2 == len(masks), "The image lists are not equal to the number of masks."
 
-		masked_img_list = []
-		for img in FA_std:
-			img_name = "TBSS/FA_masked/%s" % os.path.basename(img)
-			img_name_skel = "TBSS/FA_skeleton/skel_%s" % os.path.basename(img)
-			masked_img_list.append(img_name)
-			img_data = nib.load(img).get_data()
-			img_data[mask_index==False] = 0
-			nib.save(nib.Nifti1Image(img_data,affine),img_name)
-			os.system('echo tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (thresh, os.environ['FSLDIR'], img_name, img_name_skel))
-		os.system("cat cmd_skel_FA_parallel | parallel -j %d" % (num_threads))
+				#get first mask
+				tmp = nib.load(masks[0])
+				affine = tmp.affine
+				outmask = tmp.get_data()
+				for mask in masks:
+					outmask *= nib.load(mask).get_data()
+				nib.save(nib.Nifti1Image(outmask,affine),"TBSS/mean_FA_mask.nii.gz")
+
+				#mean FA
+				subject_list = " ".join(FA_std)
+				os.system('%s/AverageImages 3 TBSS/average_FA.nii.gz 0 %s' % (ANTSPATH,subject_list))
+				os.system('%s/bin/fslmaths TBSS/average_FA.nii.gz -mul TBSS/mean_FA_mask.nii.gz TBSS/mean_FA.nii.gz' % FSLDIR)
+
+				#skeletonise mean FA
+				os.system('%s/bin/tbss_skeleton -i TBSS/mean_FA -o TBSS/mean_FA_skeleton' % FSLDIR)
+
+				#theshold
+				os.system('%s/bin/fslmaths TBSS/mean_FA_skeleton -thr %s -bin TBSS/mean_FA_skeleton_mask' % (FSLDIR, thresh))
+
+				#build all_FA image
+				mask_index = outmask!=0
+
+				os.system('%s/bin/fslmaths TBSS/mean_FA_mask -mul -1 -add 1 -add TBSS/mean_FA_skeleton_mask TBSS/mean_FA_skeleton_mask_dst' % FSLDIR)
+				os.system('%s/bin/distancemap -i TBSS/mean_FA_skeleton_mask_dst -o TBSS/mean_FA_skeleton_mask_dst' % FSLDIR)
+
+
+				os.system("mkdir TBSS/FA_masked")
+				os.system("mkdir TBSS/FA_skeleton")
+
+				for img in FA_std:
+					img_name = "TBSS/FA_masked/%s" % os.path.basename(img)
+					img_name_skel = "TBSS/FA_skeleton/skel_%s" % os.path.basename(img)
+					img_data = nib.load(img).get_data()
+					img_data[mask_index==False] = 0
+					nib.save(nib.Nifti1Image(img_data,affine),img_name)
+					os.system('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], img_name, img_name_skel))
+				os.system("cat cmd_skel_FA_parallel | parallel -j %d" % (num_threads))
+
+			# OTHER METRIC SKELETONIZATION
+			else:
+				outmask = nib.load("TBSS/mean_FA_mask.nii.gz").get_data()
+				mask_index = outmask!=0
+				FA_std = get_wildcard('FA/*FA_to_stdT1.nii.gz')
+				metric_std = get_wildcard('%s/*%s_to_stdT1.nii.gz' % (METRIC,METRIC))
+				for a, img in enumerate(metric_std):
+					fa_img = FA_std[a]
+					img_name = "TBSS/%s_masked/%s" % (METRIC, os.path.basename(img))
+					img_name_skel = "TBSS/%s_skeleton/skel_%s" % (METRIC, os.path.basename(img))
+					img_data = nib.load(img).get_data()
+					img_data[mask_index==False] = 0
+					nib.save(nib.Nifti1Image(img_data,affine),img_name)
+					os.system('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s -a %s >> cmd_skel_%s_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], fa_img, img_name_skel, img_name, METRIC))
+				os.system("cat cmd_skel_%s_parallel | parallel -j %d" % (num_threads, METRIC))
 
 if __name__ == "__main__":
 	parser = getArgumentParser()
