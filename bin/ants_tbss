@@ -183,7 +183,7 @@ def run(opts):
 
 		num_metrics = int(np.divide(len(opts.runtbss),2))
 		for m in range(num_metrics):
-			METRICS_list = np.genfromtxt(opts.runtbss[int(m*2)])
+			METRICS_list = np.genfromtxt(opts.runtbss[int(m*2)], dtype=str)
 			METRIC = opts.runtbss[(int(m*2)+1)]
 			if METRIC != 'FA':
 				assert (os.path.exists('TBSS/mean_FA_skeleton_mask_dst.nii.gz')), "FA skeletonization must be run first."
@@ -257,10 +257,12 @@ def run(opts):
 					img_data[mask_index==False] = 0
 					nib.save(nib.Nifti1Image(img_data,affine),img_name)
 					os.system('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], img_name, img_name_skel))
-				os.system("cat cmd_skel_FA_parallel | parallel -j %d" % (num_threads))
+				os.system("cat cmd_skel_FA_parallel | parallel -j %d; rm cmd_skel_FA_parallel" % (num_threads))
 
 			# OTHER METRIC SKELETONIZATION
 			else:
+				os.system("mkdir TBSS/%s_masked" % METRIC)
+				os.system("mkdir TBSS/%s_skeleton" % METRIC)
 				outmask = nib.load("TBSS/mean_FA_mask.nii.gz").get_data()
 				mask_index = outmask!=0
 				FA_std = get_wildcard('FA/*FA_to_stdT1.nii.gz')
@@ -273,7 +275,7 @@ def run(opts):
 					img_data[mask_index==False] = 0
 					nib.save(nib.Nifti1Image(img_data,affine),img_name)
 					os.system('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s -a %s >> cmd_skel_%s_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], fa_img, img_name_skel, img_name, METRIC))
-				os.system("cat cmd_skel_%s_parallel | parallel -j %d" % (num_threads, METRIC))
+				os.system("cat cmd_skel_%s_parallel | parallel -j %d; rm cmd_skel_%s_parallel" % (METRIC, num_threads, METRIC))
 
 if __name__ == "__main__":
 	parser = getArgumentParser()
