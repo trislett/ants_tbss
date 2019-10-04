@@ -2,7 +2,7 @@ import os
 import sys
 
 from distutils.command.sdist import sdist
-from setuptools import setup
+from setuptools import setup, find_packages
 
 PACKAGE_NAME = "ants_tbss"
 BUILD_REQUIRES = ["numpy", "nibabel", "argparse", "nibabel"]
@@ -50,18 +50,21 @@ if parse_setuppy_commands():
   from numpy.distutils.core import setup
 
 exec(open('ants_tbss/version.py').read())
-setup(name = PACKAGE_NAME, version = __version__,
-  maintainer = "Tristram Lett",
-  maintainer_email = "tristram.lett@charite.de",
-  description = "ants_tbss",
-  long_description = "Simple tbss implementation with ANTs and T1w registration to template",
-  url = "https://github.com/trislett/ants_tbss",
-  download_url = "",
+setup(name = PACKAGE_NAME, version = __version__, include_package_data=True,
+  maintainer="Tristram Lett",
+  maintainer_email="tristram.lett@charite.de",
+  description="ants_tbss",
+  long_description="TBSS implementation with ANTs and T1w registration to template",
+  url="https://github.com/trislett/ants_tbss",
+  download_url="",
   platforms=["Linux", "Solaris", "Mac OS-X", "Unix"],
-  license = "GNU General Public License v3 or later (GPLv3+)",
-  classifiers = CLASSIFIERS,
-  install_requires = BUILD_REQUIRES,
-  zip_safe=True,
-  cmdclass = cmdclass,
-  configuration = configuration
+  license="GNU General Public License v3 or later (GPLv3+)",
+  classifiers=CLASSIFIERS,
+  zip_safe=False,
+  cmdclass=cmdclass,
+  install_requires=BUILD_REQUIRES,
+  packages=['ants_tbss'],
+  package_dir={'ants_tbss': ''},
+  package_data={'ants_tbss': ['ants_oasis_template_ras/*.nii.gz']},
+  configuration=configuration
 )

@@ -195,9 +195,9 @@ def antsBetCmd(numthreads, input_image, output_image_brain):
 	"""
 
 	scriptwd = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-	be_template = "%s/static/ants_oasis_template_ras/T_template0.nii.gz" % scriptwd
-	be_probability_mask = "%s/static/ants_oasis_template_ras/T_template0_BrainCerebellumProbabilityMask.nii.gz" % scriptwd
-	be_registration_mask = "%s/static/ants_oasis_template_ras/T_template0_BrainCerebellumRegistrationMask.nii.gz" % scriptwd
+	be_template = "%s/ants_tbss/ants_oasis_template_ras/T_template0.nii.gz" % scriptwd
+	be_probability_mask = "%s/ants_tbss/ants_oasis_template_ras/T_template0_BrainCerebellumProbabilityMask.nii.gz" % scriptwd
+	be_registration_mask = "%s/ants_tbss/ants_oasis_template_ras/T_template0_BrainCerebellumRegistrationMask.nii.gz" % scriptwd
 	ants_cmd = ("export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=%d; \
 					%s/antsBrainExtraction.sh -d 3 \
 						-a %s -e %s -m %s -f %s \
