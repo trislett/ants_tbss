@@ -9,7 +9,7 @@ Also read this post from the ANTS forum: https://sourceforge.net/p/advants/discu
 Temporary cookbook for the lazy:
 
 ## Requirements
-* [FSL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/), [ANTs](http://stnava.github.io/ANTs/), [parallel](www.gnu.org/software/parallel/)
+* [FSL](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/), [ANTs](http://stnava.github.io/ANTs/), [parallel](https://www.gnu.org/software/parallel/)
 * numpy, argparse, nibabel
 
 ## Installation
