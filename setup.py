@@ -5,7 +5,7 @@ from distutils.command.sdist import sdist
 from setuptools import setup, find_packages
 
 PACKAGE_NAME = "ants_tbss"
-BUILD_REQUIRES = ["numpy", "nibabel", "argparse", "nibabel"]
+BUILD_REQUIRES = ["numpy", "nibabel", "argparse"]
 
 CLASSIFIERS = ["Development Status :: 3 - Alpha",
   "Environment :: Console",

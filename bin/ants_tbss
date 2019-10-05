@@ -8,7 +8,7 @@ import json
 
 from ants_tbss.functions import get_wildcard, antsLinearRegCmd, antsNonLinearRegCmd, antsApplyTransformCmd, antsBetCmd
 
-DESCRIPTION = "Just a TBSS (FSL) implementation with ANTs and T1w registration to template."
+DESCRIPTION = "TBSS (FSL) implementation with ANTs and T1w registration to template."
 
 def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION)):
 	registration = parser.add_mutually_exclusive_group(required=True)
@@ -72,6 +72,16 @@ def run(opts):
 		# read list files
 		B0_list = np.genfromtxt(opts.antsregtotemplate[0], dtype=str)
 		T1_native_list = np.genfromtxt(opts.antsregtotemplate[1], dtype=str)
+
+		if opts.runantsbet:
+			Betted_T1 = []
+			os.system("mkdir T1w_Brain")
+			for T1w in T1_native_list:
+				t1_name = os.path.basename(T1w)[:-7]
+				print("Running antsBrainExtraction.sh on:\t%s" % t1_name)
+				os.system(antsBetCmd(num_threads, T1w, 'T1w_Brain/%s_' % t1_name)) 
+				Betted_T1.append('T1w_Brain/%s_BrainExtractionBrain.nii.gz' % t1_name)
+			T1_native_list = np.array(Betted_T1, dtype=str)
 
 		print("Running registration of B0 images -> T1w images -> template T1 image")
 		os.system("mkdir -p reg")
