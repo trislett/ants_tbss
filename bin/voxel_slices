@@ -1,0 +1,122 @@
+#!/usr/bin/env python
+
+#    Voxel slices
+#    Copyright (C) 2019  Tristram Lett
+
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import os
+import numpy as np
+import argparse as ap
+import nibabel as nib
+
+from ants_tbss.functions import autothreshold, draw_outline, nonempty_coordinate_range, correct_image, write_padded_png
+
+DESCRIPTION = "Creates images slices with optional masking images"
+
+def getArgumentParser(ap = ap.ArgumentParser(description = DESCRIPTION)):
+	ap.add_argument("-i", "--input",
+		help = "[Required] Input images(s) in nifti, minc, or mgh.", 
+		nargs = '+',
+		type = str,
+		required = True,
+		metavar = 'image')
+	group = ap.add_mutually_exclusive_group(required=True)
+	group.add_argument("-mo", "--addmaskoutline",
+		help = "Add masking image for creating a red outline", 
+		nargs = 1,
+		type = str,
+		metavar = 'image')
+	group.add_argument("-mi", "--addoutlineimage",
+		help = "Add masking image for creating a red outline", 
+		nargs = 1,
+		type = str,
+		metavar = 'image')
+	ap.add_argument("-ttype", "--thesholdingtype",
+		help = "Thresholding method (Default is otsu).",
+		type = str,
+		choices = ['otsu', 'otsu_p', 'li', 'li_p', 'yen', 'yen_p', 'zscore', 'zscore_p'])
+	ap.add_argument("-od", "--outputdir",
+		help = "[Optional] Output directory. -od /path/to/ouputdirectory",
+		nargs = 1,
+		type = str,
+		metavar = 'str')
+	return ap
+
+def run(opts):
+
+	numslices = 5
+	thr_alg = 'otsu'
+	if opts.thesholdingtype:
+		thr_alg = opts.thesholdingtype[0]
+
+	if opts.addmaskoutline:
+		mask = nib.load(opts.addmaskoutline[0])
+		mask_data = mask.get_data()
+		affine = mask.affine
+	else:
+		aimg = nib.load(opts.addoutlineimage[0])
+		aimg_data = aimg.get_data()
+		mask_data = np.zeros_like(aimg_data)
+		mask_data[aimg_data!=0]=1
+		affine = aimg.affine
+
+	x_rng, y_rng, z_rng = nonempty_coordinate_range(mask_data)
+	x_space = np.round(np.linspace(x_rng[0]+10, x_rng[1]-10, numslices))
+	y_space = np.round(np.linspace(y_rng[0]+10, y_rng[1]-10, numslices))
+	z_space = np.round(np.linspace(z_rng[0]+10, z_rng[1]-10, numslices))
+	native_space = []
+	for i in range(len(x_space)):
+		native_space.append(nib.affines.apply_affine(affine,[x_space[i],y_space[i],z_space[i]]))
+	native_space = np.array(native_space)
+
+	x_space = x_space[1:-1]
+	y_space = y_space[1:-1]
+	z_space = z_space[1:-1]
+
+	write_padded_png(mask_data, x_space, y_space, z_space, 'mask.png', cmap = "binary_r")
+	correct_image('mask.png')
+
+
+	if opts.addoutlineimage:
+		thrs1 = autothreshold(aimg_data, thr_alg)[0]
+		thrs2 = autothreshold(aimg_data[aimg_data>thrs1], thr_alg)[0]
+		low = np.zeros_like(aimg_data)
+		low[aimg_data>thrs2]=1
+		write_padded_png(low, x_space, y_space, z_space, 'lowmask.png', cmap = "binary_r")
+		correct_image('lowmask.png')
+
+	for input_image in opts.input:
+		img = nib.load(input_image)
+		img_data = img.get_data()
+		outname = input_image.replace('/','_') + ".png"
+		write_padded_png(img_data, x_space, y_space, z_space, outname, cmap = 'viridis')
+		correct_image(outname, base_color = [68,1,84])
+		draw_outline(outname,'mask.png')
+		os.system("rm mask.png")
+		if opts.addoutlineimage:
+			draw_outline(outname,'lowmask.png')
+			print("Mean white matter = %1.5e" % np.mean(img_data*low))
+			print("Mean grey matter = %1.5e" % np.mean(img_data*(mask_data-low)))
+			os.system("rm lowmask.png")
+		if opts.outputdir:
+			outdir = opts.outputdir[0]
+			if outdir[:-1] != '/':
+				outdir += '/'
+			os.system("mkdir -p %s; mv %s %s" % (outdir, outname, outdir))
+
+if __name__ == "__main__":
+	parser = getArgumentParser()
+	opts = parser.parse_args()
+	run(opts)

@@ -6,6 +6,12 @@ Tustison NJ, Avants BB, Cook PA, Kim J, Whyte J, Gee JC, Stone JR. Logical circu
 
 Also read this post from the ANTS forum: https://sourceforge.net/p/advants/discussion/840261/thread/e6fc9a8c/
 
+For brain extaction:
+
+The script antsBrainExtraction.sh was used with N4BiasFieldCorrection using the OASIS template
+
+Tustison NJ, Avants BB, Cook PA, Zheng Y, Egan A, Yushkevich PA, Gee JC. N4ITK: improved N3 bias correction. IEEE Trans Med Imaging. 2010 Jun;29(6):1310–20. doi:10.1109/TMI.2010.2046908. 
+
 Temporary cookbook for the lazy:
 
 ## Requirements
