@@ -8,7 +8,7 @@ Also read this post from the ANTS forum: https://sourceforge.net/p/advants/discu
 
 If you use the ants brain extraction script:
 
-The script antsBrainExtraction.sh was used with N4BiasFieldCorrection using the OASIS template
+The script antsBrainExtraction.sh was used to perform brain extraction including N4BiasFieldCorrection and the OASIS template.
 
 Tustison NJ, Avants BB, Cook PA, Zheng Y, Egan A, Yushkevich PA, Gee JC. N4ITK: improved N3 bias correction. IEEE Trans Med Imaging. 2010 Jun;29(6):1310–20. doi:10.1109/TMI.2010.2046908. 
 
