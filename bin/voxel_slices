@@ -102,20 +102,22 @@ def run(opts):
 		img_data = img.get_data()
 		outname = input_image.replace('/','_') + ".png"
 		write_padded_png(img_data, x_space, y_space, z_space, outname, cmap = 'viridis')
-		correct_image(outname, base_color = [68,1,84])
+		#correct_image(outname, base_color = [68,1,84])
 		draw_outline(outname,'mask.png')
-		os.system("rm mask.png")
 		if opts.addoutlineimage:
 			draw_outline(outname,'lowmask.png')
+			print("Input image : %s" % outname)
 			print("Mean white matter = %1.5e" % np.mean(img_data*low))
 			print("Mean grey matter = %1.5e" % np.mean(img_data*(mask_data-low)))
-			os.system("rm lowmask.png")
 		if opts.outputdir:
 			outdir = opts.outputdir[0]
 			if outdir[:-1] != '/':
 				outdir += '/'
 			os.system("mkdir -p %s; mv %s %s" % (outdir, outname, outdir))
-
+	if opts.outputdir:
+		os.system("mv mask.png %s" % (outdir))
+		if opts.addoutlineimage:
+			os.system("mv lowmask.png %s" % (outdir))
 if __name__ == "__main__":
 	parser = getArgumentParser()
 	opts = parser.parse_args()

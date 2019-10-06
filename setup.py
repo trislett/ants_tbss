@@ -5,7 +5,7 @@ from distutils.command.sdist import sdist
 from setuptools import setup, find_packages
 
 PACKAGE_NAME = "ants_tbss"
-BUILD_REQUIRES = ["numpy", "nibabel", "argparse", "matplotlib", "scipy"]
+BUILD_REQUIRES = ["numpy", "nibabel", "argparse", "matplotlib", "scipy", "scikit-image"]
 
 CLASSIFIERS = ["Development Status :: 3 - Alpha",
   "Environment :: Console",

@@ -6,6 +6,7 @@ import nibabel as nib
 import matplotlib.image as mpimg
 import scipy.misc as misc
 from scipy import ndimage
+from skimage import filters
 
 assert "ANTSPATH" in os.environ, "The environment variable ANTSPATH must be declared."
 ANTSPATH = os.environ['ANTSPATH']
@@ -342,7 +343,7 @@ def nonempty_coordinate_range(data, affine = None):
 	return (x_minmax,y_minmax,z_minmax)
 
 
-def sym_pad_x(arr,max_size):
+def sym_pad_x(arr, max_size):
 	"""
 	Pads a 2D array with zeros
 	
@@ -358,7 +359,7 @@ def sym_pad_x(arr,max_size):
 	arr : arr
 		padded numpy array
 	"""
-	pad_size = np.divide((max_size - arr.shape[0]),2)
+	pad_size = int(np.divide((max_size - arr.shape[0]),2))
 	pad_arr = np.zeros((pad_size, arr.shape[1]))
 	arr = np.row_stack((pad_arr, arr))
 	arr = np.row_stack((arr, pad_arr))
@@ -433,13 +434,13 @@ def write_padded_png(img_data, x_space, y_space, z_space, outname, cmap = None):
 	None
 	"""
 
-	max_size = np.max(img_data.shape)
+	max_size = int(np.max(img_data.shape))
 
 	x_array = []
 	for x in x_space:
 		x_array.append(np.swapaxes(img_data[int(x),:,::-1],0,1))
 	x_row = np.concatenate(np.array(x_array), 1)
-	x_row = sym_pad_x(x_row,max_size)
+	x_row = sym_pad_x(x_row, max_size)
 
 	if x_row.shape[0] < max_size:
 		x_row = np.row_stack((x_row, np.zeros((x_row.shape[1]))))
