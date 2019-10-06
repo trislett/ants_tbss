@@ -342,6 +342,29 @@ def nonempty_coordinate_range(data, affine = None):
 	return (x_minmax,y_minmax,z_minmax)
 
 
+def sym_pad_x(arr,max_size):
+	"""
+	Pads a 2D array with zeros
+	
+	Parameters
+	----------
+	arr : arr
+		input numpy array
+	max_size : arr
+		largest size
+	
+	Returns
+	-------
+	arr : arr
+		padded numpy array
+	"""
+	pad_size = np.divide((max_size - arr.shape[0]),2)
+	pad_arr = np.zeros((pad_size, arr.shape[1]))
+	arr = np.row_stack((pad_arr, arr))
+	arr = np.row_stack((arr, pad_arr))
+	return arr
+
+
 def correct_image(img_name, b_transparent = True, rotate = None, flip = False, base_color = [0,0,0]):
 	"""
 	Remove black from png and over-writes it.

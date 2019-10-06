@@ -39,11 +39,11 @@ def getArgumentParser(ap = ap.ArgumentParser(description = DESCRIPTION)):
 		type = str,
 		metavar = 'image')
 	group.add_argument("-mi", "--addoutlineimage",
-		help = "Add masking image for creating a red outline", 
+		help = "Add a second image for creating a red outline set by the threshold algorithm", 
 		nargs = 1,
 		type = str,
 		metavar = 'image')
-	ap.add_argument("-ttype", "--thesholdingtype",
+	ap.add_argument("-ta", "--thesholdalgorithm",
 		help = "Thresholding method (Default is otsu).",
 		type = str,
 		choices = ['otsu', 'otsu_p', 'li', 'li_p', 'yen', 'yen_p', 'zscore', 'zscore_p'])
@@ -58,8 +58,8 @@ def run(opts):
 
 	numslices = 5
 	thr_alg = 'otsu'
-	if opts.thesholdingtype:
-		thr_alg = opts.thesholdingtype[0]
+	if opts.thesholdalgorithm:
+		thr_alg = opts.thesholdalgorithm[0]
 
 	if opts.addmaskoutline:
 		mask = nib.load(opts.addmaskoutline[0])
