@@ -38,7 +38,7 @@ def get_wildcard(searchstring, printarray = False): # super dirty
 			print (outstring)
 		return outstring
 
-def antsLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None):
+def antsLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None, use_float = False):
 	"""
 	Wrapper for ANTs linear registration with some recommended parameters.
 	Rigid transfomration: gradient step = 0.1
@@ -90,9 +90,11 @@ def antsLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None):
 											out_basename,
 											outdir,
 											out_basename))
+	if use_float:
+		ants_cmd += ' --float'
 	return ants_cmd
 
-def antsNonLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None):
+def antsNonLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None, use_float = False):
 	"""
 	Wrapper for ANTs non-linear registration with some recommended parameters. I recommmend first using antsLinearRegCmd.
 	SyN transformation: [0.1,3,0] 
@@ -140,6 +142,8 @@ def antsNonLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None)
 															out_basename,
 															outdir,
 															out_basename))
+	if use_float:
+		ants_cmd += ' --float'
 	return ants_cmd
 
 def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None):
@@ -215,8 +219,25 @@ def antsBetCmd(numthreads, input_image, output_image_brain):
 									output_image_brain))
 	return ants_cmd
 
+def round_mask_transform(mask_image):
+	"""
+	Binarize a mask using numpy round and overwrites it.
+	
+	Parameters
+	----------
+	mask_image : str
+		/path/to/mask_image
+	
+	Returns
+	-------
+	None
+	"""
+	img = nib.load(mask_image)
+	img_data = img.get_data()
+	img_data = np.round(img_data)
+	nib.save(nib.Nifti1Image(img_data,img.affine), mask_image)
 
-# various methods for choosing thresholds automatically
+
 def autothreshold(data, threshold_type = 'yen', z = 2.3264):
 	"""
 	Autothresholds data.
