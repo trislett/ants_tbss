@@ -77,14 +77,15 @@ def run(opts):
 	FSLDIR = os.environ['FSLDIR']
 
 	if opts.antsregtotemplate:
-		# create empty warp list to populate
-		warp_list = []
-		mask_list = []
-
 		# read list files
 		B0_list = np.genfromtxt(opts.antsregtotemplate[0], dtype=str)
 		T1_native_list = np.genfromtxt(opts.antsregtotemplate[1], dtype=str)
 
+		# create empty warp list to populate
+		warp_list = []
+		mask_list = []
+
+		# optional antsBrainExtraction.sh
 		if opts.runantsbet:
 			Betted_T1 = []
 			os.system("mkdir T1w_Brain")
@@ -97,14 +98,10 @@ def run(opts):
 			os.system("cat cmd_ants_bet_%d | parallel -j %d; rm cmd_ants_bet_%d" % (currentTime, num_threads, currentTime))
 			T1_native_list = np.array(Betted_T1, dtype=str)
 
-
 		print("Running registration of B0 images -> T1w images -> template T1 image")
 		os.system("mkdir -p reg")
-
+		# check ipout list lenths
 		assert len(B0_list) == len(T1_native_list), "The image lists are not of equal length."
-
-
-## this need to be separated better registration and transformation! Two loops needed.
 
 		for i, b0 in enumerate(B0_list):
 			temp_transformation = {}
@@ -123,11 +120,17 @@ def run(opts):
 			mov = b0
 			log = "reg/lin%s_to_natT1.log" % b0_name
 			out = "reg/lin%s_to_natT1.nii.gz" % b0_name
-			os.system("fslmaths %s -bin %s" % (mov, mask_name))
+
+			# binarize the B0 images to create mask (they should already be brain extracted!)
+			img = nib.load(mov)
+			img_data = img.get_data()
+			img_data[img_data!=0] = 1
+			nib.save(nib.Nifti1Image(img_data,img.affine), mask_name)
 
 			# linear reg of B0 to T1w native image
 			with open("cmd_linB0_to_natT1_%d" % currentTime, "a") as cmd_linB0_to_natT1:
 				cmd_linB0_to_natT1.write("%s > %s\n" % (antsLinearRegCmd(int(1), ref, mov, out, use_float = float_flag), log))
+			# Option for additional non-linear registration of the lin_B0_to_natT1 to native-T1. It is useful for EPI distorted DWI data.
 			if opts.nonlinearwithinsubject:
 				mov = "reg/lin%s_to_natT1.nii.gz" % b0_name
 				log = "reg/%s_to_natT1.log" % b0_name
@@ -237,11 +240,12 @@ def run(opts):
 			round_mask_transform(t1_mask_name_std)
 
 	if opts.jsontransformlist:
+		# Load a list of json files with the transformation infomation (i.e., for metrics in --runtbss).
 		warp_list = np.genfromtxt(opts.jsontransformlist[0], dtype=str)
 
 	if opts.runtbss:
 		# Check runtbss inputs
-		assert len(opts.runtbss) % 2 == 0, "--runtbss must have an even number of inputs. e.g., -r FA_list FA MD_list MD."
+		assert len(opts.runtbss) % 2 == 0, "--runtbss must have an even number of inputs. e.g., -r FA_list FA MD_list MD"
 
 		# Check warp list length.
 		assert len(warp_list) == len(np.genfromtxt(opts.runtbss[0], dtype=str)), "The length the --runtbss inputs must match the number of warps."
