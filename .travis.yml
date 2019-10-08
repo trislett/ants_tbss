@@ -13,5 +13,4 @@ install:
 script: ants_tbss
 
 env:
-  - ANTSPATH=/PATH/TO/ANTS
-  - FSLDIR=/PATH/TO/FSL
+  - ANTSPATH=/PATH/TO/ANTS FSLDIR=/PATH/TO/FSL
