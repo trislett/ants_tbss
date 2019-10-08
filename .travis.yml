@@ -10,7 +10,7 @@ python:
 install:
   - pip install .
 
-script: ants_tbss
+script: ants_tbss -h
 
 env:
   - ANTSPATH=/PATH/TO/ANTS FSLDIR=/PATH/TO/FSL
