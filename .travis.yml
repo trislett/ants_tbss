@@ -9,3 +9,6 @@ python:
 
 install:
   - pip install .
+
+script: pytest
+  - ants_tbss
