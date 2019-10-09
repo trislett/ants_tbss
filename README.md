@@ -1,6 +1,7 @@
+# ants_tbss
 [![Build Status](https://travis-ci.org/trislett/ants_tbss.svg?branch=master)](https://travis-ci.org/trislett/ants_tbss)
 
-# ants_tbss
+
 TBSS (FSL) implementation with ANTs and T1w registration to template
 
 Citation:
