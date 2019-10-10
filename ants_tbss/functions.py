@@ -184,6 +184,7 @@ def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None):
 		ants_cmd = ants_cmd + (' -t %s' % warps[i])
 	return ants_cmd
 
+
 def antsBetCmd(numthreads, input_image, output_image_brain):
 	"""
 	Wrapper for applying ANTs transformations (warps).
@@ -219,6 +220,7 @@ def antsBetCmd(numthreads, input_image, output_image_brain):
 									output_image_brain))
 	return ants_cmd
 
+
 def round_mask_transform(mask_image):
 	"""
 	Binarize a mask using numpy round and overwrites it.
@@ -236,6 +238,25 @@ def round_mask_transform(mask_image):
 	img_data = img.get_data()
 	img_data = np.round(img_data)
 	nib.save(nib.Nifti1Image(img_data,img.affine), mask_image)
+
+
+def nifti_to_float_precision(img_name):
+	"""
+	Converts nifti image to float32 precision.
+	
+	Parameters
+	----------
+	img_name : str
+		/path/to/image
+	
+	Returns
+	-------
+	None
+	"""
+	img = nib.load(img_name)
+	if img.get_data_dtype() != '<f4':
+		img_data = img.get_data()
+		nib.save(nib.Nifti1Image(img_data.astype(np.float32), img.affine), img_name)
 
 
 def autothreshold(data, threshold_type = 'yen', z = 2.3264):
