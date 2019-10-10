@@ -26,6 +26,10 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 		help="For skeletonization of dwi metrics in template (standard) space, input a text file of the directory locations of the images and the metric name. The first input must be for FA (or the FA skeletonization has to be detected). -r {metric_list} {metric_name} ...")
 
 	# options
+	parser.add_argument("-nt", "--numthreads", 
+		nargs=1,
+		default=['12'],
+		help="multithreading")
 	parser.add_argument("-ab","--runantsbet",
 		action = 'store_true',
 		help="Run ANTs bet on the T1w images. Use this if your T1 inputs are not already brain extracted. Arguably, ANTs does a must better brain extraction than FSL's bet or freesurfer's watershed.")
@@ -45,10 +49,6 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 		help="Set threshold level. Default: %(default)s)",
 		default=['0.2'],
 		metavar=('float'))
-	parser.add_argument("-nt", "--numthreads", 
-		nargs=1,
-		default=['12'],
-		help="multithreading")
 	parser.add_argument("-std", "--templateimage", 
 		nargs=1,
 		default=['%s/data/standard/MNI152_T1_1mm_brain.nii.gz' % os.environ['FSLDIR']],
@@ -179,13 +179,6 @@ def run(opts):
 			os.system("cat cmd_B0_to_natT1_%d | parallel -j %d; rm cmd_B0_to_natT1_%d" % (currentTime, num_threads, currentTime))
 		os.system("cat cmd_linT1_to_stdT1_%d | parallel -j %d; rm cmd_linT1_to_stdT1_%d" % (currentTime, num_threads, currentTime))
 		os.system("cat cmd_T1_to_stdT1_%d | parallel -j %d; rm cmd_T1_to_stdT1_%d" % (currentTime, num_threads, currentTime))
-		if opts.removeinversetransform:
-			os.system('rm reg/*0InverseWarp.nii.gz')
-		if opts.usefloat:
-			print("Converting all NIFTI images in reg/* to use float32 dtype.")
-			nifti_images = np.array(get_wildcard('reg/*.nii.gz'))
-			if img in nifti_images:
-				nifti_to_float_precision(img)
 
 		# read the information for the warps
 		for i, b0 in enumerate(B0_list):
@@ -214,6 +207,7 @@ def run(opts):
 			t1_mask_name_std = "reg/%s_mask_to_stdT1.nii.gz" % t1_name
 
 			# move the B0 mask to ref
+			os.system("fslmaths %s -bin %s" % (b0_name, mask_name))
 			ref = T1_ref[i]
 			mov = mask_name
 			warps = B0_to_natT1[i]
@@ -226,7 +220,6 @@ def run(opts):
 			round_mask_transform(mask_name_t1)
 
 			# ref B0 mask to template
-			os.system("fslmaths %s -bin %s" % (mov, t1_mask_name))
 			ref = std_brain
 			mov = mask_name_t1
 			warps = T1to_stdT1[i]
@@ -239,6 +232,7 @@ def run(opts):
 			round_mask_transform(mask_name_std)
 
 			# move T1 mask
+			os.system("fslmaths %s -bin %s" % (T1_ref[i], t1_mask_name))
 			ref = std_brain
 			mov = t1_mask_name
 			warps = T1to_stdT1[i]
@@ -248,6 +242,14 @@ def run(opts):
 														warps = warps,
 														outname = outname))
 			round_mask_transform(t1_mask_name_std)
+
+		if opts.removeinversetransform:
+			os.system('rm reg/*0InverseWarp.nii.gz')
+		if opts.usefloat:
+			print("Converting all NIFTI images in reg/* to use float32 dtype.")
+			nifti_images = np.array(get_wildcard('reg/*.nii.gz'))
+			if img in nifti_images:
+				nifti_to_float_precision(img)
 
 	if opts.jsontransformlist:
 		# Load a list of json files with the transformation infomation (i.e., for metrics in --runtbss).

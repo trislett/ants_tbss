@@ -105,7 +105,7 @@ def run(opts):
 		#correct_image(outname, base_color = [68,1,84])
 		draw_outline(outname,'mask.png')
 		if opts.addoutlineimage:
-			draw_outline(outname,'lowmask.png')
+			draw_outline(outname,'lowmask.png', outline_color = [0,0,1,1])
 			print("Input image : %s" % outname)
 			print("Mean white matter = %1.5e" % np.mean(img_data*low))
 			print("Mean grey matter = %1.5e" % np.mean(img_data*(mask_data-low)))
