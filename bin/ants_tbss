@@ -36,9 +36,6 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 	parser.add_argument("-nlws","--nonlinearwithinsubject",
 		action = 'store_true',
 		help="Run an additional non-linear transformation of the linear transformed B0 image to the native space T1w image. This is useful if EPI distortions are present.")
-	parser.add_argument("-f","--usefloat",
-		action = 'store_true',
-		help="Convert ANTs output to float32. This is a hacky solution because of an ANTS/ITK bug that sometimes causes errors when converting to float32 precision.")
 	parser.add_argument("-k","--removeinversetransform",
 		action = 'store_true',
 		help="Delete the inverse transforms from the non-linear transformations. The file size is large, and they are not needed for ants_tbss.")
