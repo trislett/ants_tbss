@@ -59,20 +59,23 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 		default=['%s/data/standard/LowerCingulum_1mm.nii.gz' % os.environ['FSLDIR']],
 		metavar=('img'),
 		help="Search rule mask for skeletonization. Default: %(default)s). -std PATH/TO/SEARCH_RULE_MASK.nii.gz")
+	parser.add_argument("--dryrun", 
+		action = 'store_true',
+		help="Just output the transformation and exist.")
 
 	return parser
 
 def run(opts):
 	# get time stamp
-	currentTime=int(time())
+	currentTime = int(time())
 
-	thresh = float(opts.threshold[0])
+	thresh = str(opts.threshold[0])
 	num_threads = int(opts.numthreads[0])
 	std_brain = opts.templateimage[0]
 	current_dir = os.getcwd()
-	float_flag = False
-	if opts.usefloat:
-		float_flag = True
+#	float_flag = False
+#	if opts.usefloat:
+#		float_flag = True
 
 	assert "ANTSPATH" in os.environ, "The environment variable ANTSPATH must be declared."
 	ANTSPATH = os.environ['ANTSPATH']
@@ -124,12 +127,6 @@ def run(opts):
 			log = "reg/lin%s_to_natT1.log" % b0_name
 			out = "reg/lin%s_to_natT1.nii.gz" % b0_name
 
-			# binarize the B0 images to create mask (they should already be brain extracted!)
-			img = nib.load(mov)
-			img_data = img.get_data()
-			img_data[img_data!=0] = 1
-			nib.save(nib.Nifti1Image(img_data,img.affine), mask_name)
-
 			# linear reg of B0 to T1w native image
 			with open("cmd_linB0_to_natT1_%d" % currentTime, "a") as cmd_linB0_to_natT1:
 				cmd_linB0_to_natT1.write("%s > %s\n" % (antsLinearRegCmd(int(1), ref, mov, out, use_float = False), log))
@@ -174,6 +171,26 @@ def run(opts):
 			warp_list.append('reg/%s_warps.json' % b0_name)
 
 		warp_list = np.array(warp_list, dtype = str)
+
+		# print out pipeline and quit
+		if opts.dryrun:
+			print("Pipeline:")
+			count = 1
+			if opts.runantsbet:
+				print("[%d] antsBrainExtraction" % (count))
+				count += 1
+			print("[%d] linear transformation: B0 -> T1w = linB0toT1w" % (count))
+			count += 1
+			if opts.nonlinearwithinsubject:
+				print("[%d] non-linear transformation: linB0toT1w -> T1w = B0toT1w" % (count))
+			count += 1
+			print("[%d] linear transformation: T1w -> Template = linT1wtoTemplate" % (count))
+			count += 1
+			print("[%d] non-linear transformation: linT1wtoTemplate -> Template = T1wtoTemplate" % (count))
+			count += 1
+			print("For more information, please check the cmd_* files in the current directory and *.json files in the reg directory.")
+			quit()
+
 		os.system("cat cmd_linB0_to_natT1_%d | parallel -j %d; rm cmd_linB0_to_natT1_%d" % (currentTime, num_threads, currentTime))
 		if opts.nonlinearwithinsubject:
 			os.system("cat cmd_B0_to_natT1_%d | parallel -j %d; rm cmd_B0_to_natT1_%d" % (currentTime, num_threads, currentTime))
@@ -206,8 +223,12 @@ def run(opts):
 			t1_mask_name = "reg/%s_mask.nii.gz" % t1_name
 			t1_mask_name_std = "reg/%s_mask_to_stdT1.nii.gz" % t1_name
 
-			# move the B0 mask to ref
-			os.system("fslmaths %s -bin %s" % (b0_name, mask_name))
+			# binarize the B0 images to create mask (they should already be brain extracted!)
+			img = nib.load(b0)
+			img_data = img.get_data()
+			img_data[img_data!=0] = 1
+			nib.save(nib.Nifti1Image(img_data,img.affine), mask_name)
+
 			ref = T1_ref[i]
 			mov = mask_name
 			warps = B0_to_natT1[i]
@@ -232,7 +253,11 @@ def run(opts):
 			round_mask_transform(mask_name_std)
 
 			# move T1 mask
-			os.system("fslmaths %s -bin %s" % (T1_ref[i], t1_mask_name))
+			img = nib.load(T1_ref[i])
+			img_data = img.get_data()
+			img_data[img_data!=0] = 1
+			nib.save(nib.Nifti1Image(img_data,img.affine), t1_mask_name)
+
 			ref = std_brain
 			mov = t1_mask_name
 			warps = T1to_stdT1[i]
@@ -245,11 +270,11 @@ def run(opts):
 
 		if opts.removeinversetransform:
 			os.system('rm reg/*0InverseWarp.nii.gz')
-		if opts.usefloat:
-			print("Converting all NIFTI images in reg/* to use float32 dtype.")
-			nifti_images = np.array(get_wildcard('reg/*.nii.gz'))
-			if img in nifti_images:
-				nifti_to_float_precision(img)
+#		if opts.usefloat:
+#			print("Converting all NIFTI images in reg/* to use float32 dtype.")
+#			nifti_images = np.array(get_wildcard('reg/*.nii.gz'))
+#			for img in nifti_images:
+#				nifti_to_float_precision(img)
 
 	if opts.jsontransformlist:
 		# Load a list of json files with the transformation infomation (i.e., for metrics in --runtbss).

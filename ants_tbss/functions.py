@@ -79,8 +79,7 @@ def antsLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None, us
 							--convergence [1000x500x250x100,1e-6,10] \
 							--shrink-factors 8x4x2x1 \
 							--smoothing-sigmas 3x2x1x0vox \
-							-o [%s%s_, %s%s.nii.gz] \
-							--float''' % (numthreads,
+							-o [%s%s_, %s%s.nii.gz]''' % (numthreads,
 											ANTSPATH,
 											reference,
 											mov,
@@ -92,6 +91,7 @@ def antsLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None, us
 											out_basename))
 	if use_float:
 		ants_cmd += ' --float'
+	ants_cmd = ants_cmd.replace('\t', '')
 	return ants_cmd
 
 def antsNonLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None, use_float = False):
@@ -144,6 +144,7 @@ def antsNonLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None,
 															out_basename))
 	if use_float:
 		ants_cmd += ' --float'
+	ants_cmd = ants_cmd.replace('\t', '')
 	return ants_cmd
 
 def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None):
@@ -182,6 +183,7 @@ def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None):
 																										outname))
 	for i in range(len(warps)):
 		ants_cmd = ants_cmd + (' -t %s' % warps[i])
+	ants_cmd = ants_cmd.replace('\t', '')
 	return ants_cmd
 
 
@@ -218,6 +220,7 @@ def antsBetCmd(numthreads, input_image, output_image_brain):
 									be_probability_mask,
 									be_registration_mask,
 									output_image_brain))
+	ants_cmd = ants_cmd.replace('\t', '')
 	return ants_cmd
 
 
