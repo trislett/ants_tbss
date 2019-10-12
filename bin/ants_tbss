@@ -7,7 +7,7 @@ import nibabel as nib
 import json
 from time import time
 
-from ants_tbss.functions import get_wildcard, antsLinearRegCmd, antsNonLinearRegCmd, antsApplyTransformCmd, antsBetCmd, round_mask_transform, nifti_to_float_precision
+from ants_tbss.functions import get_wildcard, antsLinearRegCmd, antsNonLinearRegCmd, antsApplyTransformCmd, antsBetCmd, round_mask_transform
 
 DESCRIPTION = "TBSS (FSL) implementation with ANTs and T1w registration to template."
 
@@ -73,9 +73,6 @@ def run(opts):
 	num_threads = int(opts.numthreads[0])
 	std_brain = opts.templateimage[0]
 	current_dir = os.getcwd()
-#	float_flag = False
-#	if opts.usefloat:
-#		float_flag = True
 
 	assert "ANTSPATH" in os.environ, "The environment variable ANTSPATH must be declared."
 	ANTSPATH = os.environ['ANTSPATH']
@@ -270,11 +267,6 @@ def run(opts):
 
 		if opts.removeinversetransform:
 			os.system('rm reg/*0InverseWarp.nii.gz')
-#		if opts.usefloat:
-#			print("Converting all NIFTI images in reg/* to use float32 dtype.")
-#			nifti_images = np.array(get_wildcard('reg/*.nii.gz'))
-#			for img in nifti_images:
-#				nifti_to_float_precision(img)
 
 	if opts.jsontransformlist:
 		# Load a list of json files with the transformation infomation (i.e., for metrics in --runtbss).
