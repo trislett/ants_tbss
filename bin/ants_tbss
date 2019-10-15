@@ -21,6 +21,10 @@ def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION
 		nargs = 1,
 		help = "-j {json list}",
 		metavar = 'str')
+	registration.add_argument("-om", "--othermodality", 
+		nargs = 3,
+		help = "Register other MRI modality to native images (i.e. [B0]_to_natT1.nii.gz or [T1w_brain].nii.gz). -om {othermodality list} {B0->NativeT1w list} {json list}",
+		metavar = 'str')
 	parser.add_argument("-r", "--runtbss", 
 		nargs = '+',
 		help="For skeletonization of dwi metrics in template (standard) space, input a text file of the directory locations of the images and the metric name. The first input must be for FA (or the FA skeletonization has to be detected). -r {metric_list} {metric_name} ...")
@@ -268,6 +272,135 @@ def run(opts):
 	if opts.jsontransformlist:
 		# Load a list of json files with the transformation infomation (i.e., for metrics in --runtbss).
 		warp_list = np.genfromtxt(opts.jsontransformlist[0], dtype=str)
+
+	if opts.othermodality:
+
+		other_list = np.genfromtxt(opts.othermodality[0], dtype=str)
+		native_list = np.genfromtxt(opts.othermodality[1], dtype=str)
+		warp_list = np.genfromtxt(opts.othermodality[2], dtype=str)
+
+		T1to_stdT1 = []
+		mask_name_std = []
+		nativeT1 = []
+		t1_mask_name_std = []
+		T1_ref = []
+		B0_to_natT1 = []
+
+		# read the json files containing the warps and mask files
+		for json_warp_file in warp_list:
+			with open(json_warp_file) as json_file:
+				transform_files = json.load(json_file)
+				T1to_stdT1.append(transform_files['T1to_stdT1'])
+				mask_name_std.append(transform_files['mask_name_std'])
+				nativeT1.append(transform_files['nativeT1'])
+				t1_mask_name_std.append(transform_files['t1_mask_name_std'])
+				T1_ref.append(transform_files['nativeT1'])
+
+		print("Running registration of other modality images -> native space images -> template T1 image")
+		os.system("mkdir -p reg_other")
+		# check ipout list lenths
+		assert len(other_list) == len(native_list), "The image lists are not of equal length."
+
+		for i, mod_img in enumerate(other_list):
+			temp_transformation = {}
+			img_name = os.path.basename(mod_img)[:-7]
+			t1_name = os.path.basename(native_list[i])[:-7]
+
+			ref = native_list[i]
+			temp_transformation['nativeT1'] = native_list[i]
+
+			mov = mod_img
+			log = "reg_other/lin%s_to_natT1.log" % img_name
+			out = "reg_other/lin%s_to_natT1.nii.gz" % img_name
+
+			# linear reg of OTHER to T1w native image
+			with open("cmd_linOTHER_to_natT1_%d" % currentTime, "a") as cmd_linOTHER_to_natT1:
+				cmd_linOTHER_to_natT1.write("%s > %s\n" % (antsLinearRegCmd(int(1), ref, mov, out, use_float = False), log))
+			# Option for additional non-linear registration of the lin_OTHER_to_natT1 to native-T1. It is useful for EPI distorted DWI data.
+			if opts.nonlinearwithinsubject:
+				mov = "reg_other/lin%s_to_natT1.nii.gz" % img_name
+				log = "reg_other/%s_to_natT1.log" % img_name
+				nl_out = "reg_other/%s_to_natT1.nii.gz" % img_name
+				with open("cmd_OTHER_to_natT1_%d" % currentTime, "a") as cmd_OTHER_to_natT1:
+					cmd_OTHER_to_natT1.write("%s > %s\n" % (antsNonLinearRegCmd(int(1), ref, mov, nl_out, use_float = False), log))
+				temp_transformation['OTHER_to_natT1'] = ['%s_0Warp.nii.gz' % (nl_out), '%s_0GenericAffine.mat' % (out)]
+			else:
+				temp_transformation['OTHER_to_natT1'] = ['%s/%s_0GenericAffine.mat' % (current_dir, out)]
+
+			temp_transformation['T1to_stdT1'] = T1to_stdT1[i]
+			B0_to_natT1.append(temp_transformation['OTHER_to_natT1'])
+
+			# Write out the processing settings
+			with open('reg_other/%s_warps.json' % img_name, 'w') as outfile:
+				json.dump(temp_transformation, outfile, indent=3, sort_keys=True)
+
+		os.system("cat cmd_linOTHER_to_natT1_%d | parallel -j %d; rm cmd_linOTHER_to_natT1_%d" % (currentTime, num_threads, currentTime))
+		if opts.nonlinearwithinsubject:
+			os.system("cat cmd_OTHER_to_natT1_%d | parallel -j %d; rm cmd_OTHER_to_natT1_%d" % (currentTime, num_threads, currentTime))
+
+#			warp_list.append('reg_other/%s_warps.json' % img_name)
+		for i, mod_img in enumerate(other_list):
+			temp_transformation = {}
+			img_name = os.path.basename(mod_img)[:-7]
+			t1_name = os.path.basename(native_list[i])[:-7]
+
+			mask_name = "reg_other/%s_mask.nii.gz" % img_name
+			mask_name_t1 = "reg_other/%s_mask_to_natT1.nii.gz" % img_name
+			mask_name_std = "reg_other/%s_mask_to_stdT1.nii.gz" % img_name
+			t1_mask_name = "reg_other/%s_mask.nii.gz" % t1_name
+			t1_mask_name_std = "reg_other/%s_mask_to_stdT1.nii.gz" % t1_name
+
+			# binarize the other images to create mask (they should already be brain extracted!)
+			img = nib.load(mod_img)
+			img_data = img.get_data()
+			img_data[img_data!=0] = 1
+			nib.save(nib.Nifti1Image(img_data,img.affine), mask_name)
+
+			ref = T1_ref[i]
+			mov = mask_name
+			warps = B0_to_natT1[i]
+			outname = mask_name_t1
+			os.system(antsApplyTransformCmd(reference = ref,
+														mov = mov,
+														warps = warps,
+														outname = outname))
+			round_mask_transform(mask_name_t1)
+
+
+			# ref other mask to template
+			ref = std_brain
+			mov = mask_name_t1
+			warps = T1to_stdT1[i]
+			outname = mask_name_std
+			os.system(antsApplyTransformCmd(reference = ref,
+														mov = mov,
+														warps = warps,
+														outname = outname))
+			# round image
+			round_mask_transform(mask_name_std)
+
+			# move T1 mask
+			img = nib.load(nativeT1[i])
+			img_data = img.get_data()
+			img_data[img_data!=0] = 1
+			nib.save(nib.Nifti1Image(img_data,img.affine), t1_mask_name)
+
+			ref = std_brain
+			mov = t1_mask_name
+			warps = T1to_stdT1[i]
+			outname = t1_mask_name_std
+			os.system(antsApplyTransformCmd(reference = ref,
+														mov = mov,
+														warps = warps,
+														outname = outname))
+			round_mask_transform(t1_mask_name_std)
+
+			# warp the modality to std
+			ref = std_brain
+			mov = "reg_other/%s_to_natT1.nii.gz" % img_name
+			warps = T1to_stdT1[i]
+			outname = "reg_other/%s_to_stdT1.nii.gz" % img_name
+			os.system(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = outname))
 
 	if opts.runtbss:
 		# Check runtbss inputs
