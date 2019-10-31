@@ -119,7 +119,7 @@ def run(opts):
 			t1_mask_name_std = "reg/%s_mask_to_stdT1.nii.gz" % t1_name
 
 			ref = T1_native_list[i]
-			temp_transformation['nativeT1'] = T1_native_list[i]
+			temp_transformation['nativeT1'] = os.path.abspath(T1_native_list[i])
 
 			mov = b0
 			log = "reg/lin%s_to_natT1.log" % b0_name
@@ -135,9 +135,9 @@ def run(opts):
 				nl_out = "reg/%s_to_natT1.nii.gz" % b0_name
 				with open("cmd_B0_to_natT1_%d" % currentTime, "a") as cmd_B0_to_natT1:
 					cmd_B0_to_natT1.write("%s > %s\n" % (antsNonLinearRegCmd(int(1), ref, mov, nl_out, use_float = False), log))
-				temp_transformation['B0_to_natT1'] = ['%s_0Warp.nii.gz' % (nl_out), '%s_0GenericAffine.mat' % (out)]
+				temp_transformation['B0_to_natT1'] = [os.path.abspath('%s_0Warp.nii.gz' % (nl_out)), os.path.abspath('%s_0GenericAffine.mat' % (out))]
 			else:
-				temp_transformation['B0_to_natT1'] = ['%s/%s_0GenericAffine.mat' % (current_dir, out)]
+				temp_transformation['B0_to_natT1'] = [os.path.abspath('%s_0GenericAffine.mat' % (out))]
 
 			# linear reg T1 to std
 			ref = std_brain
@@ -155,13 +155,13 @@ def run(opts):
 				cmd_T1_to_stdT1.write("%s > %s\n" % (antsNonLinearRegCmd(int(1), ref, mov, out, use_float = False), log))
 
 			warps = ['%s_0Warp.nii.gz' % (out), 'reg/lin%s_to_stdT1.nii.gz_0GenericAffine.mat' % (t1_name)]
-			temp_transformation['T1to_stdT1'] = ['%s/%s_0Warp.nii.gz' % (current_dir, out), '%s/reg/lin%s_to_stdT1.nii.gz_0GenericAffine.mat' % (current_dir, t1_name)]
+			temp_transformation['T1to_stdT1'] = [os.path.abspath(warps[0]), os.path.abspath(warps[1])]
 
 			mask_list.append(mask_name_std)
 			mask_list.append(t1_mask_name_std)
 
-			temp_transformation['mask_name_std'] = mask_name_std
-			temp_transformation['t1_mask_name_std'] = t1_mask_name_std
+			temp_transformation['mask_name_std'] = os.path.abspath(mask_name_std)
+			temp_transformation['t1_mask_name_std'] = os.path.abspath(t1_mask_name_std)
 
 			# Write out the processing settings
 			with open('reg/%s_warps.json' % b0_name, 'w') as outfile:
@@ -307,7 +307,7 @@ def run(opts):
 			t1_name = os.path.basename(native_list[i])[:-7]
 
 			ref = native_list[i]
-			temp_transformation['nativeT1'] = native_list[i]
+			temp_transformation['nativeT1'] = os.path.abspath(native_list[i])
 
 			mov = mod_img
 			log = "reg_other/lin%s_to_natT1.log" % img_name
@@ -323,11 +323,11 @@ def run(opts):
 				nl_out = "reg_other/%s_to_natT1.nii.gz" % img_name
 				with open("cmd_OTHER_to_natT1_%d" % currentTime, "a") as cmd_OTHER_to_natT1:
 					cmd_OTHER_to_natT1.write("%s > %s\n" % (antsNonLinearRegCmd(int(1), ref, mov, nl_out, use_float = False), log))
-				temp_transformation['OTHER_to_natT1'] = ['%s_0Warp.nii.gz' % (nl_out), '%s_0GenericAffine.mat' % (out)]
+				temp_transformation['OTHER_to_natT1'] = [os.path.abspath('%s_0Warp.nii.gz' % (nl_out)), os.path.abspath('%s_0GenericAffine.mat' % (out))]
 			else:
-				temp_transformation['OTHER_to_natT1'] = ['%s/%s_0GenericAffine.mat' % (current_dir, out)]
+				temp_transformation['OTHER_to_natT1'] = [os.path.abspath('%s_0GenericAffine.mat' % (out))]
 
-			temp_transformation['T1to_stdT1'] = T1to_stdT1[i]
+			temp_transformation['T1to_stdT1'] = os.path.abspath(T1to_stdT1[i])
 			B0_to_natT1.append(temp_transformation['OTHER_to_natT1'])
 
 			# Write out the processing settings
