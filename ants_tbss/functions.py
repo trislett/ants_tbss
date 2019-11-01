@@ -147,7 +147,7 @@ def antsNonLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None,
 	ants_cmd = ants_cmd.replace('\t', '')
 	return ants_cmd
 
-def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None):
+def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None, inverse = False, multipleimages = False):
 	"""
 	Wrapper for applying ANTs transformations (warps).
 	
@@ -170,19 +170,28 @@ def antsApplyTransformCmd(reference, mov, warps, outname, outdir = None):
 		Output of the command (that can be piped to os.system).
 	"""
 
+	if multipleimages:
+		e_ = '3'
+	else:
+		e_ = '0'
+
 	warps = np.array(warps)
 	if not outdir:
 		outdir = ''
 	else:
 		if outdir[-1] != "/":
 			outdir = outdir + "/"
-	ants_cmd = ('%s/antsApplyTransforms -d 3 -r %s -i %s -e 0 -o %s%s --float' % (ANTSPATH,
+	ants_cmd = ('%s/antsApplyTransforms -d 3 -r %s -i %s -e %s -o %s%s --float' % (ANTSPATH,
 																										reference,
 																										mov,
+																										e_,
 																										outdir,
 																										outname))
 	for i in range(len(warps)):
-		ants_cmd = ants_cmd + (' -t %s' % warps[i])
+		if inverse:
+			ants_cmd = ants_cmd + (' -t [%s, 1]' % warps[i])
+		else:
+			ants_cmd = ants_cmd + (' -t %s' % warps[i])
 	ants_cmd = ants_cmd.replace('\t', '')
 	return ants_cmd
 
