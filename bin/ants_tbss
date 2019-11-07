@@ -7,7 +7,7 @@ import nibabel as nib
 import json
 from time import time
 
-from ants_tbss.functions import get_wildcard, antsLinearRegCmd, antsNonLinearRegCmd, antsApplyTransformCmd, antsBetCmd, round_mask_transform
+from ants_tbss.functions import get_wildcard, antsLinearRegCmd, antsNonLinearRegCmd, antsApplyTransformCmd, antsBetCmd, round_mask_transform, runCmd_log
 
 DESCRIPTION = "TBSS (FSL) implementation with ANTs and T1w registration to template."
 
@@ -92,18 +92,18 @@ def run(opts):
 		# optional antsBrainExtraction.sh
 		if opts.runantsbet:
 			Betted_T1 = []
-			os.system("mkdir T1w_Brain")
+			runCmd_log("mkdir T1w_Brain")
 			for T1w in T1_native_list:
 				t1_name = os.path.basename(T1w)[:-7]
 				print("Running antsBrainExtraction.sh on:\t%s" % t1_name)
 				with open("cmd_ants_bet_%d" % currentTime, "a") as cmd_ants_bet:
 					cmd_ants_bet.write("%s\n" % antsBetCmd(numthreads = 1, input_image = T1w, output_image_brain = 'T1w_Brain/%s_' % t1_name))
 				Betted_T1.append('T1w_Brain/%s_BrainExtractionBrain.nii.gz' % t1_name)
-			os.system("cat cmd_ants_bet_%d | parallel -j %d; rm cmd_ants_bet_%d" % (currentTime, num_threads, currentTime))
+			runCmd_log("cat cmd_ants_bet_%d | parallel -j %d; rm cmd_ants_bet_%d" % (currentTime, num_threads, currentTime))
 			T1_native_list = np.array(Betted_T1, dtype=str)
 
 		print("Running registration of B0 images -> T1w images -> template T1 image")
-		os.system("mkdir -p reg")
+		runCmd_log("mkdir -p reg")
 		# check ipout list lenths
 		assert len(B0_list) == len(T1_native_list), "The image lists are not of equal length."
 
@@ -189,11 +189,11 @@ def run(opts):
 			print("For more information, please check the cmd_* files in the current directory and *.json files in the reg directory.")
 			quit()
 
-		os.system("cat cmd_linB0_to_natT1_%d | parallel -j %d; rm cmd_linB0_to_natT1_%d" % (currentTime, num_threads, currentTime))
+		runCmd_log("cat cmd_linB0_to_natT1_%d | parallel -j %d; rm cmd_linB0_to_natT1_%d" % (currentTime, num_threads, currentTime))
 		if opts.nonlinearwithinsubject:
-			os.system("cat cmd_B0_to_natT1_%d | parallel -j %d; rm cmd_B0_to_natT1_%d" % (currentTime, num_threads, currentTime))
-		os.system("cat cmd_linT1_to_stdT1_%d | parallel -j %d; rm cmd_linT1_to_stdT1_%d" % (currentTime, num_threads, currentTime))
-		os.system("cat cmd_T1_to_stdT1_%d | parallel -j %d; rm cmd_T1_to_stdT1_%d" % (currentTime, num_threads, currentTime))
+			runCmd_log("cat cmd_B0_to_natT1_%d | parallel -j %d; rm cmd_B0_to_natT1_%d" % (currentTime, num_threads, currentTime))
+		runCmd_log("cat cmd_linT1_to_stdT1_%d | parallel -j %d; rm cmd_linT1_to_stdT1_%d" % (currentTime, num_threads, currentTime))
+		runCmd_log("cat cmd_T1_to_stdT1_%d | parallel -j %d; rm cmd_T1_to_stdT1_%d" % (currentTime, num_threads, currentTime))
 
 		# read the information for the warps
 		for i, b0 in enumerate(B0_list):
@@ -231,7 +231,7 @@ def run(opts):
 			mov = mask_name
 			warps = B0_to_natT1[i]
 			outname = mask_name_t1
-			os.system(antsApplyTransformCmd(reference = ref,
+			runCmd_log(antsApplyTransformCmd(reference = ref,
 														mov = mov,
 														warps = warps,
 														outname = outname))
@@ -243,7 +243,7 @@ def run(opts):
 			mov = mask_name_t1
 			warps = T1to_stdT1[i]
 			outname = mask_name_std
-			os.system(antsApplyTransformCmd(reference = ref,
+			runCmd_log(antsApplyTransformCmd(reference = ref,
 														mov = mov,
 														warps = warps,
 														outname = outname))
@@ -260,14 +260,14 @@ def run(opts):
 			mov = t1_mask_name
 			warps = T1to_stdT1[i]
 			outname = t1_mask_name_std
-			os.system(antsApplyTransformCmd(reference = ref,
+			runCmd_log(antsApplyTransformCmd(reference = ref,
 														mov = mov,
 														warps = warps,
 														outname = outname))
 			round_mask_transform(t1_mask_name_std)
 
 		if opts.removeinversetransform:
-			os.system('rm reg/*0InverseWarp.nii.gz')
+			runCmd_log('rm reg/*0InverseWarp.nii.gz')
 
 	if opts.jsontransformlist:
 		# Load a list of json files with the transformation infomation (i.e., for metrics in --runtbss).
@@ -297,7 +297,7 @@ def run(opts):
 				T1_ref.append(transform_files['nativeT1'])
 
 		print("Running registration of other modality images -> native space images -> template T1 image")
-		os.system("mkdir -p reg_other")
+		runCmd_log("mkdir -p reg_other")
 		# check ipout list lenths
 		assert len(other_list) == len(native_list), "The image lists are not of equal length."
 
@@ -334,9 +334,9 @@ def run(opts):
 			with open('reg_other/%s_warps.json' % img_name, 'w') as outfile:
 				json.dump(temp_transformation, outfile, indent=3, sort_keys=True)
 
-		os.system("cat cmd_linOTHER_to_natT1_%d | parallel -j %d; rm cmd_linOTHER_to_natT1_%d" % (currentTime, num_threads, currentTime))
+		runCmd_log("cat cmd_linOTHER_to_natT1_%d | parallel -j %d; rm cmd_linOTHER_to_natT1_%d" % (currentTime, num_threads, currentTime))
 		if opts.nonlinearwithinsubject:
-			os.system("cat cmd_OTHER_to_natT1_%d | parallel -j %d; rm cmd_OTHER_to_natT1_%d" % (currentTime, num_threads, currentTime))
+			runCmd_log("cat cmd_OTHER_to_natT1_%d | parallel -j %d; rm cmd_OTHER_to_natT1_%d" % (currentTime, num_threads, currentTime))
 
 #			warp_list.append('reg_other/%s_warps.json' % img_name)
 		for i, mod_img in enumerate(other_list):
@@ -360,7 +360,7 @@ def run(opts):
 			mov = mask_name
 			warps = B0_to_natT1[i]
 			outname = mask_name_t1
-			os.system(antsApplyTransformCmd(reference = ref,
+			runCmd_log(antsApplyTransformCmd(reference = ref,
 														mov = mov,
 														warps = warps,
 														outname = outname))
@@ -372,7 +372,7 @@ def run(opts):
 			mov = mask_name_t1
 			warps = T1to_stdT1[i]
 			outname = mask_name_std
-			os.system(antsApplyTransformCmd(reference = ref,
+			runCmd_log(antsApplyTransformCmd(reference = ref,
 														mov = mov,
 														warps = warps,
 														outname = outname))
@@ -389,7 +389,7 @@ def run(opts):
 			mov = t1_mask_name
 			warps = T1to_stdT1[i]
 			outname = t1_mask_name_std
-			os.system(antsApplyTransformCmd(reference = ref,
+			runCmd_log(antsApplyTransformCmd(reference = ref,
 														mov = mov,
 														warps = warps,
 														outname = outname))
@@ -400,7 +400,7 @@ def run(opts):
 			mov = "reg_other/%s_to_natT1.nii.gz" % img_name
 			warps = T1to_stdT1[i]
 			outname = "reg_other/%s_to_stdT1.nii.gz" % img_name
-			os.system(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = outname))
+			runCmd_log(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = outname))
 
 	if opts.runtbss:
 		# Check runtbss inputs
@@ -430,8 +430,8 @@ def run(opts):
 			if METRIC != 'FA':
 				assert (os.path.exists('TBSS/mean_FA_skeleton_mask_dst.nii.gz')), "FA skeletonization must be run first."
 
-			os.system("mkdir -p %s_native" % METRIC)
-			os.system("mkdir -p %s" % METRIC)
+			runCmd_log("mkdir -p %s_native" % METRIC)
+			runCmd_log("mkdir -p %s" % METRIC)
 
 			# transform the metric images to standard space
 			for i, metric_img in enumerate(METRICS_list):
@@ -444,19 +444,19 @@ def run(opts):
 				ref = T1_ref[i]
 				mov = metric_img
 				warps = B0_to_natT1[i]
-				os.system(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = metric_nat))
+				runCmd_log(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = metric_nat))
 
 				# metric to template
 				ref = std_brain
 				mov = metric_nat
 				warps = T1to_stdT1[i]
-				os.system(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = metric_std))
+				runCmd_log(antsApplyTransformCmd(reference = ref, mov = mov, warps = warps, outname = metric_std))
 
 
 			#### Skeletonization ####
 			if METRIC == 'FA':
 				tbssdir = 'TBSS'
-				os.system("mkdir %s" % tbssdir)
+				runCmd_log("mkdir %s" % tbssdir)
 				FA_std = get_wildcard('FA/*FA_to_stdT1.nii.gz')
 				# build all_FA_mask
 				masks = std_masks
@@ -473,24 +473,24 @@ def run(opts):
 
 				#mean FA
 				subject_list = " ".join(FA_std)
-				os.system('%s/AverageImages 3 TBSS/average_FA.nii.gz 0 %s' % (ANTSPATH,subject_list))
-				os.system('%s/bin/fslmaths TBSS/average_FA.nii.gz -mul TBSS/mean_FA_mask.nii.gz TBSS/mean_FA.nii.gz' % FSLDIR)
+				runCmd_log('%s/AverageImages 3 TBSS/average_FA.nii.gz 0 %s' % (ANTSPATH,subject_list))
+				runCmd_log('%s/bin/fslmaths TBSS/average_FA.nii.gz -mul TBSS/mean_FA_mask.nii.gz TBSS/mean_FA.nii.gz' % FSLDIR)
 
 				#skeletonise mean FA
-				os.system('%s/bin/tbss_skeleton -i TBSS/mean_FA -o TBSS/mean_FA_skeleton' % FSLDIR)
+				runCmd_log('%s/bin/tbss_skeleton -i TBSS/mean_FA -o TBSS/mean_FA_skeleton' % FSLDIR)
 
 				#theshold
-				os.system('%s/bin/fslmaths TBSS/mean_FA_skeleton -thr %s -bin TBSS/mean_FA_skeleton_mask' % (FSLDIR, thresh))
+				runCmd_log('%s/bin/fslmaths TBSS/mean_FA_skeleton -thr %s -bin TBSS/mean_FA_skeleton_mask' % (FSLDIR, thresh))
 
 				#build all_FA image
 				mask_index = outmask!=0
 
-				os.system('%s/bin/fslmaths TBSS/mean_FA_mask -mul -1 -add 1 -add TBSS/mean_FA_skeleton_mask TBSS/mean_FA_skeleton_mask_dst' % FSLDIR)
-				os.system('%s/bin/distancemap -i TBSS/mean_FA_skeleton_mask_dst -o TBSS/mean_FA_skeleton_mask_dst' % FSLDIR)
+				runCmd_log('%s/bin/fslmaths TBSS/mean_FA_mask -mul -1 -add 1 -add TBSS/mean_FA_skeleton_mask TBSS/mean_FA_skeleton_mask_dst' % FSLDIR)
+				runCmd_log('%s/bin/distancemap -i TBSS/mean_FA_skeleton_mask_dst -o TBSS/mean_FA_skeleton_mask_dst' % FSLDIR)
 
 
-				os.system("mkdir TBSS/FA_masked")
-				os.system("mkdir TBSS/FA_skeleton")
+				runCmd_log("mkdir TBSS/FA_masked")
+				runCmd_log("mkdir TBSS/FA_skeleton")
 
 				for img in FA_std:
 					img_name = "TBSS/FA_masked/%s" % os.path.basename(img)
@@ -498,13 +498,13 @@ def run(opts):
 					img_data = nib.load(img).get_data()
 					img_data[mask_index==False] = 0
 					nib.save(nib.Nifti1Image(img_data,affine),img_name)
-					os.system('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], img_name, img_name_skel))
-				os.system("cat cmd_skel_FA_parallel | parallel -j %d; rm cmd_skel_FA_parallel" % (num_threads))
+					runCmd_log('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], img_name, img_name_skel))
+				runCmd_log("cat cmd_skel_FA_parallel | parallel -j %d; rm cmd_skel_FA_parallel" % (num_threads))
 
 			# OTHER METRIC SKELETONIZATION
 			else:
-				os.system("mkdir TBSS/%s_masked" % METRIC)
-				os.system("mkdir TBSS/%s_skeleton" % METRIC)
+				runCmd_log("mkdir TBSS/%s_masked" % METRIC)
+				runCmd_log("mkdir TBSS/%s_skeleton" % METRIC)
 				outmask = nib.load("TBSS/mean_FA_mask.nii.gz").get_data()
 				mask_index = outmask!=0
 				FA_std = get_wildcard('FA/*FA_to_stdT1.nii.gz')
@@ -516,8 +516,8 @@ def run(opts):
 					img_data = nib.load(img).get_data()
 					img_data[mask_index==False] = 0
 					nib.save(nib.Nifti1Image(img_data,affine),img_name)
-					os.system('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s -a %s >> cmd_skel_%s_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], fa_img, img_name_skel, img_name, METRIC))
-				os.system("cat cmd_skel_%s_parallel | parallel -j %d; rm cmd_skel_%s_parallel" % (METRIC, num_threads, METRIC))
+					runCmd_log('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s -a %s >> cmd_skel_%s_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], fa_img, img_name_skel, img_name, METRIC))
+				runCmd_log("cat cmd_skel_%s_parallel | parallel -j %d; rm cmd_skel_%s_parallel" % (METRIC, num_threads, METRIC))
 
 if __name__ == "__main__":
 	parser = getArgumentParser()

@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 
 import os
+import time
+import datetime
 import numpy as np
 import nibabel as nib
 import matplotlib.image as mpimg
 import scipy.misc as misc
 from scipy import ndimage
 from skimage import filters
+
 
 assert "ANTSPATH" in os.environ, "The environment variable ANTSPATH must be declared."
 ANTSPATH = os.environ['ANTSPATH']
@@ -37,6 +40,26 @@ def get_wildcard(searchstring, printarray = False): # super dirty
 		if printarray:
 			print (outstring)
 		return outstring
+
+def runCmd_log(cmd, logname = 'cmd_log'):
+	"""
+	Run a system command and logs it
+	
+	Parameters
+	----------
+	cmd : str
+		Text string of the system command.
+	logname : str
+		The log file output file.
+	Returns
+	-------
+	outstring : str or array
+	"""
+	ct = time.time()
+	with open("cmd_log", "a") as logfile:
+		logfile.write("[%s]\nCMD: %s\n" % (datetime.datetime.now(),cmd))
+	os.system(cmd)
+	print("Timestamp\t[%s]\tElapsed\t[%1.2fs]\n[CMD] %s" % (datetime.datetime.now(), (time.time() - ct), cmd))
 
 def antsLinearRegCmd(numthreads, reference, mov, out_basename, outdir = None, use_float = False):
 	"""
