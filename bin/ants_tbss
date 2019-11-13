@@ -506,6 +506,7 @@ def run(opts):
 				runCmd_log("mkdir TBSS/%s_masked" % METRIC)
 				runCmd_log("mkdir TBSS/%s_skeleton" % METRIC)
 				outmask = nib.load("TBSS/mean_FA_mask.nii.gz").get_data()
+				affine = nib.load("TBSS/mean_FA_mask.nii.gz").affine
 				mask_index = outmask!=0
 				FA_std = get_wildcard('FA/*FA_to_stdT1.nii.gz')
 				metric_std = get_wildcard('%s/*%s_to_stdT1.nii.gz' % (METRIC,METRIC))

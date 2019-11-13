@@ -5,7 +5,9 @@ import time
 import datetime
 import numpy as np
 import nibabel as nib
+import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
+import matplotlib.colors as colors
 import scipy.misc as misc
 from scipy import ndimage
 from skimage import filters
@@ -386,6 +388,59 @@ def draw_outline(img_png, mask_png, outline_color = [1,0,0,1], remove_mask = Fal
 		os.remove(mask_png)
 	mpimg.imsave(img_png, img)
 
+def outlay_png(img_png, outlay_png, remove_overlay = False):
+	"""
+	Uses the alpha values to overlay a png on another png.
+	
+	Parameters
+	----------
+	img_png : str
+		png file of image. e.g., brain.png
+	outlay_png : str
+		png file of mask. e.g. overlap.png
+	remove_overlay : bool
+		flag to delete outlay_png
+	
+	Returns
+	-------
+	None
+	"""
+	img = mpimg.imread(img_png)
+	img_overlap = mpimg.imread(outlay_png)
+	img[img_overlap[:,:,-1]!=0] = img_overlap[img_overlap[:,:,-1]!=0]
+
+	if remove_overlay:
+		os.remove(outlay_png)
+	mpimg.imsave(img_png, img)
+
+def write_colorbar(threshold, input_cmap, name_cmap, outtype = 'png', transparent = True):
+	"""
+	Returns the coordinates of non-empty range of an image array (i.e., array with three dimensions)
+	
+	Parameters
+	----------
+	data : arr
+		three dimensional array
+	affine : arr
+		[optional] apply the input affine transformation first.
+	
+	Returns
+	-------
+	x_minmax : arr
+		array with x-axis minimum and maximum
+	y_minmax : arr
+		array with y-axis minimum and maximum
+	z_minmax : arr
+		array with z-axis minimum and maximum
+	"""
+	a = np.array([[threshold[0],threshold[1]]])
+	plt.figure()
+	plt.imshow(a, cmap=input_cmap)
+	plt.gca().set_visible(False)
+	cax = plt.axes([0.1, 0.1, 0.03, 0.8])
+	plt.colorbar(orientation="vertical", cax=cax)
+	plt.savefig("%s_colorbar.%s" % (os.path.basename(name_cmap), outtype),bbox_inches='tight', transparent = transparent)
+	plt.close()
 
 def nonempty_coordinate_range(data, affine = None):
 	"""
@@ -487,7 +542,7 @@ def correct_image(img_name, b_transparent = True, rotate = None, flip = False, b
 	misc.imsave(img_name, img)
 
 
-def write_padded_png(img_data, x_space, y_space, z_space, outname, cmap = None):
+def write_padded_png(img_data, x_space, y_space, z_space, outname, vmin = None, vmax = None, cmap = None):
 	"""
 	write padded png
 	
@@ -542,7 +597,72 @@ def write_padded_png(img_data, x_space, y_space, z_space, outname, cmap = None):
 
 	mask_array = np.column_stack((x_row, y_row))
 	mask_array = np.column_stack((mask_array, z_row))
-	if cmap:
-		mpimg.imsave(outname, mask_array, cmap=cmap)
+
+	mpimg.imsave(outname, mask_array,
+					vmin = vmin,
+					vmax = vmax,
+					cmap=cmap)
+
+
+def linear_cm(c_start, c_end, c_mid = None, alpha = True, hide_lower = True, cmap_name = 'from_list'):
+	"""
+	Function to create linear lookup table
+	
+	Parameters
+	----------
+	c_start : array
+		start colour [float([R]), float(G), float(B)]. Each value must range from 0 to 1.
+	c_end : array
+		end colour
+	c_mid : array, optional
+		middle colour
+	alpha : bool
+		create a column for alpha. Default = True.
+	hide_lower : bool
+		hide values below the threshold. Default = True
+	cmap_name : str, optional
+		Name of color map to create.
+	
+	Returns
+	-------
+	cmap : dict
+		Matplotlib colormap
+	"""
+	cmap_array = np.zeros((256,3))
+	if c_mid is not None:
+		for i in range(3):
+			cmap_array[0:128,i] = np.linspace(c_start[i], c_end[i],128)
+			cmap_array[127:256,i] = np.linspace(c_end[i], c_mid[i],129)
 	else:
-		mpimg.imsave(outname, mask_array)
+		for i in range(3):
+			cmap_array[:,i] = np.linspace(c_start[i],c_end[i],256)
+	if alpha:
+		cmap_array = np.column_stack((cmap_array, np.ones(len(cmap_array))))
+		if hide_lower:
+			cmap_array[0,-1] = 0
+	return colors.ListedColormap(colors = cmap_array, name = cmap_name)
+
+def cm_hide_lower(cmap_name):
+	"""
+	Add an alpha and sets the bottom color to zero
+		
+	Parameters
+	----------
+	cmap_name : string
+		The name of the matplotlib cmap
+	
+	Returns
+	-------
+	cmap : dict
+		Matplotlib colormap
+	"""
+	cmap = plt.cm.get_cmap(cmap_name)
+	try:
+		cmap_array = np.array(cmap.colors)
+	except:
+		cmap_array = cmap(np.linspace(0,1,256))
+	if cmap_array.shape[1] == 1:
+		cmap_array = np.column_stack((cmap_array, np.ones(len(cmap_array))))
+	cmap_array[0,-1] = 0
+	return colors.ListedColormap(colors = cmap_array, name = cmap_name)
+
