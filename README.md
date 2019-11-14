@@ -7,7 +7,7 @@ There are essentially two steps: (a) Inter-modality, intrasubject registration o
 
 The software requires tight brain extractions for the T1w images. Brain extraction using [antsBrainExtraction.sh](https://github.com/ANTsX/ANTs/blob/master/Scripts/antsBrainExtraction.sh) and based on recommended settings from [fMRIprep](https://fmriprep.readthedocs.io/en/latest/workflows.html#brain-extraction-brain-tissue-segmentation-and-spatial-normalization).
 
-It is also possible to use ants_tbss (--othermodality) for registration of other modalities such as fMRI (e.g., betted example_func.nii.gz) to B0, and use the previously calculated transformations to native space and standard space.
+It is also possible to use ants_tbss (--othermodality) for registration of other modalities such as fMRI (e.g., betted example_func.nii.gz) to B0-in-native-T1w, and use the previously calculated transformations to native space and standard space.
 
 [voxel_slices](bin/voxel_slices) is also installed for fast production quality controls images.
 
