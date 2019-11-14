@@ -9,7 +9,9 @@ The software requires tight brain extractions for the T1w images. Brain extracti
 
 It is also possible to use ants_tbss (--othermodality) for registration of other modalities such as fMRI (e.g., betted example_func.nii.gz) to B0-in-native-T1w, and use the previously calculated transformations to native space and standard space.
 
-[voxel_slices](bin/voxel_slices) is also installed for fast production quality controls images.
+[voxel_slices](bin/voxel_slices) is also installed for fast production of quality controls images.
+
+e.g.,
 
 _Autothresholded FA on T1w image in MNI_1mm space_
 ![Autothresholded FA on T1w image in MNI_1mm space](ants_tbss/static/FA_native.gif)
