@@ -21,7 +21,7 @@ import numpy as np
 import argparse as ap
 import nibabel as nib
 
-from ants_tbss.functions import autothreshold, draw_outline, nonempty_coordinate_range, correct_image, write_padded_png, linear_cm, outlay_png, cm_hide_lower
+from ants_tbss.functions import autothreshold, draw_outline, nonempty_coordinate_range, correct_image, write_padded_png, linear_cm, outlay_png, cm_hide_lower, write_colorbar
 
 
 DESCRIPTION = "Creates images slices with optional masking images"
@@ -40,12 +40,12 @@ def getArgumentParser(ap = ap.ArgumentParser(description = DESCRIPTION)):
 		type = str,
 		metavar = 'image')
 	group.add_argument("-mi", "--addoutlineimage",
-		help = "Add a second image for creating a red outline set by the threshold algorithm", 
+		help = "Add an image for creating a red outline set by the threshold algorithm based on two thresholds", 
 		nargs = 1,
 		type = str,
 		metavar = 'image')
 	group.add_argument("-si", "--addstatisticimage",
-		help = "Add a second image for creating a red outline set by the threshold algorithm", 
+		help = "Overlay a statistic image", 
 		nargs = 1,
 		type = str,
 		metavar = 'image')
@@ -81,7 +81,7 @@ def run(opts):
 	colourmapname = opts.colourmap[0]
 	thr_alg = 'otsu'
 	if opts.thesholdalgorithm:
-		thr_alg = opts.thesholdalgorithm[0]
+		thr_alg = opts.thesholdalgorithm
 
 	if opts.addmaskoutline:
 		mask = nib.load(opts.addmaskoutline[0])
@@ -113,8 +113,14 @@ def run(opts):
 	y_space = y_space[1:-1]
 	z_space = z_space[1:-1]
 
-	write_padded_png(mask_data, x_space, y_space, z_space, 'mask.png', cmap = 'binary_r')
-	correct_image('mask.png')
+	# for parallelization
+	rand_value = str(np.random.randint(1,99999999)).zfill(8)
+	mask_name = rand_value + '_mask.png'
+	if opts.addoutlineimage:
+		lowmask_name = rand_value + '_lowmask.png'
+
+	write_padded_png(mask_data, x_space, y_space, z_space, mask_name, cmap = 'binary_r')
+	correct_image(mask_name)
 
 
 	if opts.addoutlineimage:
@@ -122,16 +128,20 @@ def run(opts):
 		thrs2 = autothreshold(aimg_data[aimg_data>thrs1], thr_alg)[0]
 		low = np.zeros_like(aimg_data)
 		low[aimg_data>thrs2]=1
-		write_padded_png(low, x_space, y_space, z_space, 'lowmask.png', cmap = "binary_r")
-		correct_image('lowmask.png')
+		write_padded_png(low, x_space, y_space, z_space, lowmask_name, cmap = "binary_r")
+		correct_image(lowmask_name)
 
 	for input_image in opts.input:
 		img = nib.load(input_image)
 		img_data = img.get_data()
-		outname = input_image.replace('/','_') + ".png"
-		write_padded_png(img_data, x_space, y_space, z_space, outname, cmap = cm_hide_lower(colourmapname))
-		#correct_image(outname, base_color = [68,1,84])
+		outname = input_image.replace('.nii','')
+		outname = outname.replace('.gz','')
+		outname = outname.replace('.','_')
+		outname = outname.replace('/','_') + ".png"
+		write_padded_png(img_data, x_space, y_space, z_space, outname,
+								cmap = cm_hide_lower(colourmapname))
 		if opts.addstatisticimage:
+			statmask_name = rand_value + '_stat.png'
 			if opts.setthreshold:
 				thrs1 = float(opts.setthreshold[0])
 				thrs2 = float(opts.setthreshold[1])
@@ -139,24 +149,37 @@ def run(opts):
 				thrs1 = autothreshold(aimg_data, thr_alg)[0]
 				thrs2 = autothreshold(aimg_data[aimg_data>thrs1], thr_alg)[0]
 			cmap_ry = linear_cm([1,0,0],[1,1,0])
-			write_padded_png(aimg_data, x_space, y_space, z_space, 'stat.png', vmin = thrs1, vmax = thrs2, cmap = cmap_ry)
-			outlay_png(img_png = outname, outlay_png = 'stat.png', remove_overlay = True)
-		else:
-			draw_outline(outname,'mask.png')
-		if opts.addoutlineimage:
-			draw_outline(outname,'lowmask.png')
+			write_padded_png(aimg_data, x_space, y_space, z_space, statmask_name, vmin = thrs1, vmax = thrs2, cmap = cmap_ry)
+			overlayname = os.path.basename(opts.addstatisticimage[0]).replace('/','_') + outname
+			overlayname = overlayname.replace('.nii','')
+			overlayname = overlayname.replace('.gz','')
+			outlay_png(img_png = outname, outlay_png = statmask_name, outname = overlayname, cleanup = True)
+			write_colorbar(threshold = [thrs1, thrs2], input_cmap = cmap_ry, name_cmap = overlayname[:-4], outtype = 'png', transparent = True)
+			outname = overlayname
+		elif opts.addoutlineimage:
+			draw_outline(outname, mask_name)
+			draw_outline(outname, lowmask_name)
 			print("Input image : %s" % outname)
 			print("Mean white matter = %1.5e" % np.mean(img_data*low))
 			print("Mean grey matter = %1.5e" % np.mean(img_data*(mask_data-low)))
+		else:
+			draw_outline(outname, mask_name)
 		if opts.outputdir:
 			outdir = opts.outputdir[0]
 			if outdir[:-1] != '/':
 				outdir += '/'
 			os.system("mkdir -p %s; mv %s %s" % (outdir, outname, outdir))
-	if opts.outputdir:
-		os.system("mv mask.png %s" % (outdir))
-		if opts.addoutlineimage:
-			os.system("mv lowmask.png %s" % (outdir))
+			if opts.addstatisticimage:
+				os.system("mv %s_colorbar.png %s" % (overlayname[:-4], outdir))
+	# delete mask(s)
+	os.remove(mask_name)
+	if opts.addoutlineimage:
+		if os.path.exists(lowmask_name):
+			os.remove(lowmask_name)
+	if opts.addstatisticimage:
+		if os.path.exists(statmask_name):
+			os.remove(statmask_name)
+
 if __name__ == "__main__":
 	parser = getArgumentParser()
 	opts = parser.parse_args()

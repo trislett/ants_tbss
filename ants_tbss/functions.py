@@ -388,7 +388,7 @@ def draw_outline(img_png, mask_png, outline_color = [1,0,0,1], remove_mask = Fal
 		os.remove(mask_png)
 	mpimg.imsave(img_png, img)
 
-def outlay_png(img_png, outlay_png, remove_overlay = False):
+def outlay_png(img_png, outlay_png, outname = None, cleanup = False):
 	"""
 	Uses the alpha values to overlay a png on another png.
 	
@@ -408,10 +408,13 @@ def outlay_png(img_png, outlay_png, remove_overlay = False):
 	img = mpimg.imread(img_png)
 	img_overlap = mpimg.imread(outlay_png)
 	img[img_overlap[:,:,-1]!=0] = img_overlap[img_overlap[:,:,-1]!=0]
-
-	if remove_overlay:
+	if outname is None:
+		outname = img_png
+	mpimg.imsave(outname, img)
+	if cleanup:
 		os.remove(outlay_png)
-	mpimg.imsave(img_png, img)
+		os.remove(img_png)
+
 
 def write_colorbar(threshold, input_cmap, name_cmap, outtype = 'png', transparent = True):
 	"""
@@ -604,7 +607,7 @@ def write_padded_png(img_data, x_space, y_space, z_space, outname, vmin = None, 
 					cmap=cmap)
 
 
-def linear_cm(c_start, c_end, c_mid = None, alpha = True, hide_lower = True, cmap_name = 'from_list'):
+def linear_cm(c_start, c_end, c_mid = None, alpha = True, hide_lower = True, cmap_name = 'from_list', set_alpha = None):
 	"""
 	Function to create linear lookup table
 	
@@ -640,6 +643,8 @@ def linear_cm(c_start, c_end, c_mid = None, alpha = True, hide_lower = True, cma
 		cmap_array = np.column_stack((cmap_array, np.ones(len(cmap_array))))
 		if hide_lower:
 			cmap_array[0,-1] = 0
+	if set_alpha is not None:
+		cmap_array[:,-1] = cmap_array[:,-1] * set_alpha
 	return colors.ListedColormap(colors = cmap_array, name = cmap_name)
 
 def cm_hide_lower(cmap_name):
@@ -657,11 +662,8 @@ def cm_hide_lower(cmap_name):
 		Matplotlib colormap
 	"""
 	cmap = plt.cm.get_cmap(cmap_name)
-	try:
-		cmap_array = np.array(cmap.colors)
-	except:
-		cmap_array = cmap(np.linspace(0,1,256))
-	if cmap_array.shape[1] == 1:
+	cmap_array = cmap(np.linspace(0,1,256))
+	if cmap_array.shape[1] == 3:
 		cmap_array = np.column_stack((cmap_array, np.ones(len(cmap_array))))
 	cmap_array[0,-1] = 0
 	return colors.ListedColormap(colors = cmap_array, name = cmap_name)
