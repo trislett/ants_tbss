@@ -1,7 +1,7 @@
 # ants_tbss
 [![Build Status](https://travis-ci.org/trislett/ants_tbss.svg?branch=master)](https://travis-ci.org/trislett/ants_tbss)
 
-TBSS (FSL) implementation with ANTs and T1w registration to template. ants_tbss creates the TBSS skeleton using ANTS without FA to FA registrations.
+TBSS (FSL) implementation with ANTs and T1w registration to template. [ants_tbss](bin/ants_tbss) creates the TBSS skeleton using ANTS without FA to FA registrations.
 
 There are essentially two steps: (a) Inter-modality, intrasubject registration of the B0 image to subject T1w image (b) Registration of subject T1w image the MNI152 1mm brain template (by default). 
 
