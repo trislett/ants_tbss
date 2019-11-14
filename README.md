@@ -1,8 +1,27 @@
 # ants_tbss
 [![Build Status](https://travis-ci.org/trislett/ants_tbss.svg?branch=master)](https://travis-ci.org/trislett/ants_tbss)
 
+TBSS (FSL) implementation with ANTs and T1w registration to template. ants_tbss creates the TBSS skeleton using ANTS without FA to FA registrations.
 
-TBSS (FSL) implementation with ANTs and T1w registration to template
+There are essentially two steps: (a) Inter-modality, intrasubject registration of the B0 image to subject T1w image (b) Registration of subject T1w image the MNI152 1mm brain template (by default). 
+
+The software requires tight brain extractions for the T1w images. Brain extraction using [antsBrainExtraction.sh](https://github.com/ANTsX/ANTs/blob/master/Scripts/antsBrainExtraction.sh) and based on recommended settings from [fMRIprep](https://fmriprep.readthedocs.io/en/latest/workflows.html#brain-extraction-brain-tissue-segmentation-and-spatial-normalization).
+
+It is also possible to use ants_tbss (--othermodality) for registration of other modalities such as fMRI (e.g., betted example_func.nii.gz) to B0, and use the previously calculated transformations to native space and standard space.
+
+[voxel_slices](bin/voxel_slices) is also installed for fast production quality controls images.
+
+_Autothresholded FA on T1w image in MNI_1mm space_
+![Autothresholded FA on T1w image in MNI_1mm space](ants_tbss/static/FA_native.gif)
+
+
+_FA with MNI_1mm brain image segmentation_
+![FA with MNI_1mm brain image segmentation](ants_tbss/static/FA_meanT1.gif)
+
+
+_Skeletonized FA on mean FA in MNI_1mm space_
+![Skeletonized FA on mean FA in MNI_1mm space](ants_tbss/static/skelFA_stdFA.gif)
+
 
 Citation:
 Tustison NJ, Avants BB, Cook PA, Kim J, Whyte J, Gee JC, Stone JR. Logical circularity in voxel-based analysis: normalization strategy may induce statistical bias. Hum Brain Mapp. 2014 Mar;35(3):745-59. doi: 10.1002/hbm.22211.
@@ -31,11 +50,7 @@ Tustison NJ, Avants BB, Cook PA, Zheng Y, Egan A, Yushkevich PA, Gee JC. N4ITK: 
 
 ##### Clone the git page, and install ants_tbss
 
-```git clone https://github.com/trislett/ants_tbss.git```
-
-```cd ants_tbss```
-
-```pip install .```
+```pip install git+https://github.com/trislett/ants_tbss.git```
 
 ##### Make files list and run ants_tbss
 
@@ -53,4 +68,4 @@ Make a text file with betted B0 images
 
 Run ants_tbss
 
-```ants_tbss --antsregtotemplate B0_brain_list T1w_brain_list --runtbss FA_list --numthreads 12```
+```ants_tbss --antsregtotemplate B0_brain_list T1w_brain_list --runtbss FA_list FA -nlws --numthreads 8```
