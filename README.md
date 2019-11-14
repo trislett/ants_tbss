@@ -15,7 +15,7 @@ _Autothresholded FA on T1w image in MNI_1mm space_
 ![Autothresholded FA on T1w image in MNI_1mm space](ants_tbss/static/FA_native.gif)
 
 
-_FA with MNI_1mm brain image segmentation_
+_FA with MNI_1mm brain image auththresholded segmentation_
 ![FA with MNI_1mm brain image segmentation](ants_tbss/static/FA_meanT1.gif)
 
 
