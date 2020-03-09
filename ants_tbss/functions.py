@@ -17,6 +17,8 @@ assert "ANTSPATH" in os.environ, "The environment variable ANTSPATH must be decl
 ANTSPATH = os.environ['ANTSPATH']
 assert "FSLDIR" in os.environ, "The environment variable FSLDIR must be declared."
 FSLDIR = os.environ['FSLDIR']
+assert "FREESURFER_HOME" in os.environ, "The environment variable FREESURFER_HOME must be declared."
+FREESURFER_HOME = os.environ['FREESURFER_HOME']
 
 def get_wildcard(searchstring, printarray = False): # super dirty
 	"""
