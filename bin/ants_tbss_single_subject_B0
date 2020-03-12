@@ -1,0 +1,415 @@
+#!/usr/bin/env python
+
+import os
+import numpy as np
+import argparse
+import nibabel as nib
+from time import time
+from shutil import which
+import xml.dom.minidom
+
+from ants_tbss.functions import get_wildcard, antsLinearRegCmd, antsNonLinearRegCmd, antsApplyTransformCmd, round_mask_transform, runCmd_log
+
+def apply_transform_to_parcellation(parc_image, warps, reference_image, output_image, hcp_mmp1_special = False, remove_temp = True):
+	tempnum = "%05d" % np.random.randint(99999)
+	parc = nib.load(parc_image)
+	parc_data = parc.get_fdata()
+	# built 4D image
+	labels = np.unique(parc_data)
+	if hcp_mmp1_special:
+		print("removing mising ROIs 121(L_ProS) and 301 (R_ProS) and reordering labels")
+		parc_new = np.zeros_like(parc_data)
+		for i, label in enumerate(labels):
+			print("%d -> %d" % (int(label),int(i)))
+			parc_new[parc_data==label] = i
+		parc_data = parc_new
+		labels = np.unique(parc_data)
+	outimage_data = np.zeros((parc_data.shape[0],parc_data.shape[1],parc_data.shape[2], len(labels[1:])))
+	for i, lable in enumerate(labels[1:]):
+		outimage_data[parc_data==lable,i] = 1
+	nib.save(nib.Nifti1Image(outimage_data.astype(np.uint8), parc.affine), 'long_parc_%s.nii' % tempnum)
+	del outimage_data
+	runCmd_log(antsApplyTransformCmd(reference = reference_image,
+								mov = 'long_parc_%s.nii' % tempnum,
+								warps = warps,
+								outname = 'long_parc_%s_to_dwi.nii' % tempnum,
+								inverse = False,
+								multipleimages = True))
+
+	round_mask_transform('long_parc_%s_to_dwi.nii' % tempnum)
+	long_parc_transformed = nib.load('long_parc_%s_to_dwi.nii' % tempnum)
+	long_parc_transformed_data = long_parc_transformed.get_fdata()
+	new_mask = np.sum(long_parc_transformed_data,3)
+	print(np.unique(new_mask))
+	for i, lable in enumerate(labels[1:]):
+		long_parc_transformed_data[:,:,:,i][long_parc_transformed_data[:,:,:,i]!=0] = lable
+	parc_data_transformed = np.sum(long_parc_transformed_data,3)
+	nib.save(nib.Nifti1Image(parc_data_transformed.astype(np.float32), long_parc_transformed.affine), output_image)
+	if remove_temp:
+		runCmd_log("rm long_parc_%s_to_dwi.nii long_parc_%s.nii" % (tempnum,tempnum))
+
+def binarize_nifiti(image, outpath = ""):
+	img = nib.load(image)
+	img_data = img.get_fdata()
+	img_data[img_data!=0] = 1
+	if outpath != "":
+		if outpath[-1] != "/":
+			outpath + "/"
+	output_image = outpath + "mask_" + os.path.basename(image)
+	nib.save(nib.Nifti1Image(img_data, img.affine), output_image)
+
+def mask_nifti(image, mask):
+	img = nib.load(image)
+	img_data = img.get_fdata()
+	mask_data = nib.load(mask).get_fdata()
+	img_data[mask_data == 0] = 0
+	nib.save(nib.Nifti1Image(img_data, img.affine), image)
+
+def FSL_erode(mask_path, outmask_path, FSLDIR = os.environ['FSLDIR']):
+	img = nib.load(mask_path)
+	X, Y, Z = img.get_fdata().shape
+	os.system("%s/bin/fslmaths %s -min 1 -ero -roi 1 %s 1 %s 1 %s 0 1 %s" % (FSLDIR, mask_path, (X-2), (Y-2), (Z-2), outmask_path))
+
+
+DESCRIPTION = "TBSS (FSL) implementation with ANTs and T1w registration to template."
+
+def getArgumentParser(parser = argparse.ArgumentParser(description = DESCRIPTION)):
+
+	parser.add_argument("-s", "--subjectid", 
+		nargs = 1,
+		help = "Subject ID and input images. -s {SubjID}",
+		metavar = 'str',
+		required=True)
+
+	parser.add_argument("-b", "--b0_images", 
+		nargs = '+',
+		help = "Subject ID and input images. --b0_images {b0_image_0} ... {b0_image_n}",
+		metavar = 'str',
+		required=True)
+
+	parser.add_argument("-fa", "--fa_images", 
+		nargs = '+',
+		help = "Subject ID and input images. --fa_images {fa_image_0} ... {fa_image_n}",
+		metavar = 'str',
+		required=True)
+
+	parser.add_argument("-md", "--md_images", 
+		nargs = '+',
+		help = "Subject ID and input images. -fa_images {SubjID} {b0 list}",
+		metavar = 'str',
+		required=False)
+
+	parser.add_argument("-bm", "--b0_masks", 
+		nargs = '+',
+		help = "Subject ID and input images. --b0_images {b0_image_0} ... {b0_image_n}",
+		metavar = 'str',
+		required=False)
+
+	# options
+	parser.add_argument("-nt", "--numthreads", 
+		nargs=1,
+		default=['12'],
+		help="multithreading")
+
+	# settings
+	parser.add_argument("-t","--threshold",
+		nargs=1,
+		help="Set threshold level. Default: %(default)s)",
+		default=['0.2'],
+		metavar=('float'))
+	parser.add_argument("-ti", "--templateimage", 
+		nargs=1,
+		default=['%s/data/atlases/JHU/JHU-ICBM-FA-1mm.nii.gz' % os.environ['FSLDIR']],
+		metavar=('img'),
+		help="Template (standard) image. Default: %(default)s). -std PATH/TO/TEMPLATE.nii.gz")
+	parser.add_argument("-tl", "--templatelabel", 
+		nargs=1,
+		default=['%s/data/atlases/JHU/JHU-ICBM-labels-1mm.nii.gz' % os.environ['FSLDIR']],
+		metavar=('img'),
+		help="Template (standard) image. Default: %(default)s). -std PATH/TO/TEMPLATE.nii.gz")
+	parser.add_argument("-tlxml", "--templatelabelxml", 
+		nargs=1,
+		default=['%s/data/atlases/JHU-labels.xml' % os.environ['FSLDIR']],
+		metavar=('xml'),
+		help="Template (standard) image. Default: %(default)s). -std PATH/TO/TEMPLATE.nii.gz")
+	parser.add_argument("--searchrulemask", 
+		nargs=1,
+		default=['%s/data/standard/LowerCingulum_1mm.nii.gz' % os.environ['FSLDIR']],
+		metavar=('img'),
+		help="Search rule mask for skeletonization. Default: %(default)s). -std PATH/TO/SEARCH_RULE_MASK.nii.gz")
+	return parser
+
+def run(opts):
+	# get time stamp
+	currentTime = int(time())
+
+	thresh = str(opts.threshold[0])
+	num_threads = int(opts.numthreads[0])
+
+	templateimage = opts.templateimage[0]
+	templatelabel = opts.templatelabel[0]
+	templatelabelxml = opts.templatelabelxml[0]
+
+	# checking for ANTS, FSL, MRtrix3 and Freesurfer
+	assert "ANTSPATH" in os.environ, "The environment variable ANTSPATH must be declared."
+	ANTSPATH = os.environ['ANTSPATH']
+	assert "FSLDIR" in os.environ, "The environment variable FSLDIR must be declared."
+	FSLDIR = os.environ['FSLDIR']
+	assert "FREESURFER_HOME" in os.environ, "The environment variable FREESURFER_HOME must be declared."
+	FREESURFER_HOME = os.environ['FREESURFER_HOME']
+	assert which("dwi2mask") is not None, "MRtrix3 is not installed."
+
+
+	# read list files
+	subjID = opts.subjectid[0]
+
+	b0_images = opts.b0_images
+	fa_images = opts.fa_images
+	assert len(b0_images) == len(fa_images), "B0 images and FA images must have teh same length."
+	if opts.md_images:
+		md_images = opts.md_images
+		assert len(b0_images) == len(md_images), "B0 images and MD images must have teh same length."
+		md_images = [os.path.abspath(img) for img in md_images]
+	if opts.b0_masks:
+		b0_masks = opts.b0_masks
+		assert len(b0_images) == len(b0_masks), "B0 images and their masks must have teh same length."
+		b0_masks = [os.path.abspath(img) for img in b0_masks]
+
+	b0_images = [os.path.abspath(img) for img in b0_images]
+	fa_images = [os.path.abspath(img) for img in fa_images]
+
+
+	runCmd_log("mkdir -p %s" % subjID)
+	os.chdir(subjID)
+	runCmd_log("mkdir -p masks")
+	if opts.b0_masks:
+		for b0_mask in b0_masks:
+			FSL_erode(mask_path = b0_mask,
+						outmask_path = "masks/" + os.path.basename(b0_mask),
+						FSLDIR = os.environ['FSLDIR'])
+	else:
+		for b0_image in b0_images:
+			img = nib.load(b0_image)
+			img_data = img.get_fdata()
+			img_data[img_data!=0] = 1
+			outname = "masks/" + os.path.basename(b0_image)
+			outname = outname[:-7] + "_mask.nii.gz"
+			nib.save(nib.Nifti1Image(img_data, img.affine, img.header), outname)
+			FSL_erode(mask_path = outname,
+						outmask_path = outname,
+						FSLDIR = os.environ['FSLDIR'])
+	b0_masks = get_wildcard("masks/*")
+
+	# create non-biased template
+	runCmd_log("%s/bin/mri_robust_template --mov %s --template %s_B0_template.nii.gz --satit" %(FREESURFER_HOME, " ".join(b0_images), subjID))
+
+	runCmd_log("%s/bin/fslswapdim %s_B0_template.nii.gz x z -y %s_B0_template.nii.gz" %(FSLDIR, subjID, subjID))
+
+	print("Running linear registration of FA images -> template")
+	runCmd_log("mkdir -p reg")
+	# check ipout list lenths
+
+	to_self_transformations = []
+	for i, B0 in enumerate(b0_images):
+		B0_name = os.path.basename(B0)[:-7]
+		mov = B0
+		ref = "%s_B0_template.nii.gz" % subjID
+		out = "reg/lin%s_to_templateB0.nii.gz" % B0_name
+		log = "reg/lin%s_to_templateB0.log" % B0_name
+
+		lin_transform = '%s_0GenericAffine.mat' % (out)
+
+		# linear reg of B0 to T1w native image
+		with open("cmd_linB0_to_templateB0_%d" % currentTime, "a") as cmd_transform_lin:
+			cmd_transform_lin.write("%s > %s\n" % (antsLinearRegCmd(int(1), ref, mov, out, use_float = False), log))
+
+		mov = out
+		log = "reg/%s_to_templateB0.log" % B0_name
+		out = "reg/%s_to_templateB0.nii.gz" % B0_name
+
+		with open("cmd_B0_to_templateB0_%d" % currentTime, "a") as cmd_transform_nlin:
+			cmd_transform_nlin.write("%s > %s\n" % (antsNonLinearRegCmd(int(1), ref, mov, out, use_float = False), log))
+
+		warps = ['%s_0Warp.nii.gz' % (out), lin_transform]
+		to_self_transformations.append(warps)
+
+	runCmd_log("cat cmd_linB0_to_templateB0_%d | parallel -j %d; rm cmd_linB0_to_templateB0_%d" % (currentTime, num_threads, currentTime))
+
+	runCmd_log("cat cmd_B0_to_templateB0_%d | parallel -j %d; rm cmd_B0_to_templateB0_%d" % (currentTime, num_threads, currentTime))
+
+	to_self_transformations.sort()
+	b0_masks.sort()
+	# move masks
+	for i, mask in enumerate(b0_masks):
+		reg_mask = "reg/%s_to_templateBO.nii.gz" % os.path.basename(mask)[:-7]
+		runCmd_log(antsApplyTransformCmd(reference = ref,
+										mov = mask,
+										warps = to_self_transformations[i],
+										outname = reg_mask))
+		round_mask_transform(reg_mask)
+		runCmd_log("%s/bin/fslmaths %s_B0_template.nii.gz -mul %s %s_B0_template.nii.gz" % (FSLDIR, subjID, reg_mask, subjID))
+	runCmd_log("%s/bin/fslmaths %s_B0_template.nii.gz -bin %s_B0_mask.nii.gz" % (FSLDIR, subjID, subjID))
+
+	METRIC = 'FA'
+	fa_images.sort()
+	templateFA_images = []
+	for i, fa in enumerate(fa_images):
+		reg_fa = "reg/%s_to_templateBO.nii.gz" % os.path.basename(fa)[:-7]
+		runCmd_log(antsApplyTransformCmd(reference = ref,
+										mov = fa,
+										warps = to_self_transformations[i],
+										outname = reg_fa))
+		templateFA_images.append(reg_fa)
+	tbssdir = 'TBSS'
+	runCmd_log("mkdir %s" % tbssdir)
+
+	#mean FA
+	subject_list = " ".join(templateFA_images)
+	runCmd_log('%s/AverageImages 3 TBSS/average_FA.nii.gz 0 %s' % (ANTSPATH, subject_list))
+	runCmd_log('cp %s_B0_mask.nii.gz TBSS/mean_FA_mask.nii.gz' % subjID)
+	runCmd_log('%s/bin/fslmaths TBSS/average_FA.nii.gz -mul TBSS/mean_FA_mask.nii.gz TBSS/mean_FA.nii.gz' % FSLDIR)
+
+	#skeletonise mean FA
+	runCmd_log('%s/bin/tbss_skeleton -i TBSS/mean_FA -o TBSS/mean_FA_skeleton' % FSLDIR)
+
+	#theshold
+	runCmd_log('%s/bin/fslmaths TBSS/mean_FA_skeleton -thr %s -bin TBSS/mean_FA_skeleton_mask' % (FSLDIR, thresh))
+
+	#build all_FA image
+
+	runCmd_log('%s/bin/fslmaths TBSS/mean_FA_mask -mul -1 -add 1 -add TBSS/mean_FA_skeleton_mask TBSS/mean_FA_skeleton_mask_dst' % FSLDIR)
+	runCmd_log('%s/bin/distancemap -i TBSS/mean_FA_skeleton_mask_dst -o TBSS/mean_FA_skeleton_mask_dst' % FSLDIR)
+
+	runCmd_log("mkdir TBSS/FA_masked")
+	runCmd_log("mkdir TBSS/FA_skeleton")
+
+	outmask = nib.load("TBSS/mean_FA_mask.nii.gz").get_fdata()
+	affine = nib.load("TBSS/mean_FA_mask.nii.gz").affine
+	mask_index = outmask!=0
+
+	for img in templateFA_images:
+		img_name = "TBSS/FA_masked/%s" % os.path.basename(img)
+		img_name_skel = "TBSS/FA_skeleton/skel_%s" % os.path.basename(img)
+		img_data = nib.load(img).get_fdata()
+		img_data[mask_index==False] = 0
+		nib.save(nib.Nifti1Image(img_data,affine),img_name)
+		runCmd_log('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s >> cmd_skel_FA_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], img_name, img_name_skel))
+
+	runCmd_log("cat cmd_skel_FA_parallel | parallel -j %d; rm cmd_skel_FA_parallel" % (num_threads))
+
+	METRIC = 'MD'
+	md_images.sort()
+
+	runCmd_log("mkdir TBSS/%s_masked" % METRIC)
+	runCmd_log("mkdir TBSS/%s_skeleton" % METRIC)
+
+	templateMD_images = []
+	for i, md in enumerate(md_images):
+		reg_md = "reg/%s_to_templateBO.nii.gz" % os.path.basename(md)[:-7]
+		runCmd_log(antsApplyTransformCmd(reference = ref,
+										mov = md,
+										warps = to_self_transformations[i],
+										outname = reg_md))
+		templateMD_images.append(reg_md)
+
+
+	for i, img in enumerate(templateMD_images):
+		img_name = "TBSS/MD_masked/%s" % os.path.basename(img)
+		img_name_skel = "TBSS/MD_skeleton/skel_%s" % os.path.basename(img)
+		img_name_FA = "TBSS/FA_masked/%s" % os.path.basename(templateFA_images[i])
+		img_data = nib.load(img).get_fdata()
+		img_data[mask_index==False] = 0
+		nib.save(nib.Nifti1Image(img_data*100,affine),img_name)
+		runCmd_log('echo %s/bin/tbss_skeleton -i TBSS/mean_FA -p %s TBSS/mean_FA_skeleton_mask_dst %s/data/standard/LowerCingulum_1mm %s %s -a %s >> cmd_skel_MD_parallel' % (FSLDIR, thresh, os.environ['FSLDIR'], img_name_FA , img_name_skel, img_name))
+
+	runCmd_log("cat cmd_skel_MD_parallel | parallel -j %d; rm cmd_skel_MD_parallel" % (num_threads))
+
+
+	# move atlas to DWI space
+
+	# make mask
+	runCmd_log("mkdir -p atlas_reg")
+#	binarize_nifiti(t1brain, "atlas_reg/")
+
+	ref = templateimage
+	mov = "TBSS/average_FA.nii.gz"
+
+	log = "atlas_reg/lin_average_FA_to_template.log"
+	out = "atlas_reg/lin_average_FA_to_template.nii.gz"
+	runCmd_log("%s" % (antsLinearRegCmd(int(num_threads), ref, mov, out, use_float = False)))
+
+	mov = out
+	log = "atlas_reg/average_FA_to_template.log"
+	out = "atlas_reg/average_FA_to_template.nii.gz"
+	runCmd_log("%s" % (antsNonLinearRegCmd(int(num_threads), ref, mov, out, use_float = False)))
+
+	warps = np.array([['atlas_reg/lin_average_FA_to_template.nii.gz_0GenericAffine.mat',1],
+							'atlas_reg/average_FA_to_template.nii.gz_0InverseWarp.nii.gz'])
+
+	output_atlas = "atlas_reg/%s_%s" % (subjID, os.path.basename(templatelabel))
+
+	apply_transform_to_parcellation(parc_image = templatelabel,
+												warps = warps,
+												reference_image = "TBSS/average_FA.nii.gz",
+												output_image = output_atlas)
+
+	# get FA and MD values
+	img_data = nib.load(output_atlas).get_fdata()
+
+	# FA
+	skel_mask_img = nib.load("TBSS/mean_FA_skeleton_mask.nii.gz")
+	skel_mask = skel_mask_img.get_fdata()
+	skel_img_data = img_data*skel_mask
+	nib.save(nib.Nifti1Image(skel_img_data, skel_mask_img.affine, skel_mask_img.header), "TBSS/mean_FA_atlas.nii.gz") 
+
+	doc = xml.dom.minidom.parse(templatelabelxml)
+	labels = doc.getElementsByTagName("label")
+	ROI_labels = []
+	for i in range(1,len(labels)):
+		label_name = labels[i].firstChild.data
+		label_name = label_name.replace("(","")
+		label_name = label_name.replace(")","")
+		label_name = label_name.replace("/","or")
+		label_name = label_name.replace(" ","_")
+		while label_name.endswith("_"):
+			label_name = label_name[:-1]
+#		label_name = label_name.replace("(","_")
+#		label_name = label_name.replace(")","_")
+		ROI_labels.append(label_name)
+	ROI_labels.append("Mean_Skeleton")
+
+	skel_FA_imgs = get_wildcard("TBSS/FA_skeleton/*")
+	os.system("echo %s,%s >> atlas_reg/Mean_FA.csv" % ("SubjID",",".join(np.array(ROI_labels, dtype = str))))
+	for j, skel_FA_img in enumerate(skel_FA_imgs):
+		SubjectID = os.path.basename(fa_images[j])[:-7]
+		skel_FA = nib.load(skel_FA_img).get_fdata()
+		mean_values = []
+		for i in range(1, int(img_data.max()+1)):
+			roi = skel_FA[skel_img_data == i]
+			mean = roi[np.nonzero(roi)].mean()
+			mean_values.append(mean)
+		roi = skel_FA[skel_mask!=0]
+		mean = roi[np.nonzero(roi)].mean()
+		mean_values.append(mean)
+		os.system("echo %s,%s >> atlas_reg/Mean_FA.csv" % (SubjectID,",".join(np.array(mean_values, dtype = str))))
+
+	skel_MD_imgs = get_wildcard("TBSS/MD_skeleton/*")
+	os.system("echo %s,%s >> atlas_reg/Mean_MD.csv" % ("SubjID",",".join(np.array(ROI_labels, dtype = str))))
+	for j, skel_MD_img in enumerate(skel_MD_imgs):
+		SubjectID = os.path.basename(md_images[j])[:-7]
+		skel_MD = nib.load(skel_MD_img).get_fdata()
+		mean_values = []
+		for i in range(1, int(img_data.max()+1)):
+			roi = skel_MD[skel_img_data == i]
+			mean = roi[np.nonzero(roi)].mean()
+			mean_values.append(mean)
+		roi = skel_MD[skel_mask!=0]
+		mean = roi[np.nonzero(roi)].mean()
+		mean_values.append(mean)
+		os.system("echo %s,%s >> atlas_reg/Mean_MD.csv" % (SubjectID,",".join(np.array(mean_values, dtype = str))))
+
+
+if __name__ == "__main__":
+	parser = getArgumentParser()
+	opts = parser.parse_args()
+	run(opts)
