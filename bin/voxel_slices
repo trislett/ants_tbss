@@ -21,7 +21,7 @@ import numpy as np
 import argparse as ap
 import nibabel as nib
 
-from ants_tbss.functions import autothreshold, draw_outline, nonempty_coordinate_range, correct_image, write_padded_png, linear_cm, outlay_png, cm_hide_lower, write_colorbar
+from ants_tbss.functions import autothreshold, draw_outline, nonempty_coordinate_range, correct_image, write_padded_png, linear_cm, outlay_png, mask_png, cm_hide_lower, write_colorbar
 
 
 DESCRIPTION = "Creates images slices with optional masking images"
@@ -49,6 +49,15 @@ def getArgumentParser(ap = ap.ArgumentParser(description = DESCRIPTION)):
 		nargs = 1,
 		type = str,
 		metavar = 'image')
+	group.add_argument("-nm", "--nomask",
+		help = "Binarizes each input image to create a mask.", 
+		action = 'store_true')
+	ap.add_argument("-no", "--nooutline",
+		help = "Do not create a mask outline.",
+		action = 'store_true')
+	ap.add_argument("-neg", "--statsneg",
+		help = "Must be used with -si. Overlay the negative statistic image too.",
+		action = 'store_true')
 	ap.add_argument("-ta", "--thesholdalgorithm",
 		help = "Thresholding method (Default is otsu).",
 		type = str,
@@ -79,49 +88,53 @@ def run(opts):
 
 	numslices = int(opts.numberofslices[0]) + 2
 	colourmapname = opts.colourmap[0]
+
 	thr_alg = 'otsu'
 	if opts.thesholdalgorithm:
 		thr_alg = opts.thesholdalgorithm
 
 	if opts.addmaskoutline:
 		mask = nib.load(opts.addmaskoutline[0])
-		mask_data = mask.get_data()
+		mask_data = mask.get_fdata()
 		affine = mask.affine
 	elif opts.addstatisticimage:
 		aimg = nib.load(opts.addstatisticimage[0])
-		aimg_data = aimg.get_data()
+		aimg_data = aimg.get_fdata()
+		mask_data = np.zeros_like(aimg_data)
+		mask_data[aimg_data!=0]=1
+		affine = aimg.affine
+	elif opts.addoutlineimage:
+		aimg = nib.load(opts.addoutlineimage[0])
+		aimg_data = aimg.get_fdata()
 		mask_data = np.zeros_like(aimg_data)
 		mask_data[aimg_data!=0]=1
 		affine = aimg.affine
 	else:
-		aimg = nib.load(opts.addoutlineimage[0])
-		aimg_data = aimg.get_data()
-		mask_data = np.zeros_like(aimg_data)
-		mask_data[aimg_data!=0]=1
-		affine = aimg.affine
+		pass
 
-	x_rng, y_rng, z_rng = nonempty_coordinate_range(mask_data)
-	x_space = np.round(np.linspace(x_rng[0]+10, x_rng[1]-10, numslices))
-	y_space = np.round(np.linspace(y_rng[0]+10, y_rng[1]-10, numslices))
-	z_space = np.round(np.linspace(z_rng[0]+10, z_rng[1]-10, numslices))
-	native_space = []
-	for i in range(len(x_space)):
-		native_space.append(nib.affines.apply_affine(affine,[x_space[i],y_space[i],z_space[i]]))
-	native_space = np.array(native_space)
+	if not opts.nomask:
 
-	x_space = x_space[1:-1]
-	y_space = y_space[1:-1]
-	z_space = z_space[1:-1]
+		x_rng, y_rng, z_rng = nonempty_coordinate_range(mask_data)
+		x_space = np.round(np.linspace(x_rng[0]+10, x_rng[1]-10, numslices))
+		y_space = np.round(np.linspace(y_rng[0]+10, y_rng[1]-10, numslices))
+		z_space = np.round(np.linspace(z_rng[0]+10, z_rng[1]-10, numslices))
+		native_space = []
+		for i in range(len(x_space)):
+			native_space.append(nib.affines.apply_affine(affine,[x_space[i],y_space[i],z_space[i]]))
+		native_space = np.array(native_space)
 
-	# for parallelization
-	rand_value = str(np.random.randint(1,99999999)).zfill(8)
-	mask_name = rand_value + '_mask.png'
-	if opts.addoutlineimage:
-		lowmask_name = rand_value + '_lowmask.png'
+		x_space = x_space[1:-1]
+		y_space = y_space[1:-1]
+		z_space = z_space[1:-1]
 
-	write_padded_png(mask_data, x_space, y_space, z_space, mask_name, cmap = 'binary_r')
-	correct_image(mask_name)
+		# for parallelization
+		rand_value = str(np.random.randint(1,99999999)).zfill(8)
+		mask_name = rand_value + '_mask.png'
+		if opts.addoutlineimage:
+			lowmask_name = rand_value + '_lowmask.png'
 
+		write_padded_png(mask_data, x_space, y_space, z_space, mask_name, cmap = 'binary_r')
+		correct_image(mask_name)
 
 	if opts.addoutlineimage:
 		thrs1 = autothreshold(aimg_data, thr_alg)[0]
@@ -131,15 +144,47 @@ def run(opts):
 		write_padded_png(low, x_space, y_space, z_space, lowmask_name, cmap = "binary_r")
 		correct_image(lowmask_name)
 
+	temp_masks = []
 	for input_image in opts.input:
 		img = nib.load(input_image)
-		img_data = img.get_data()
+		img_data = img.get_fdata()
+
+		# This creates a non-zero mask for each input image
+		if opts.nomask:
+
+			mask_data = np.zeros_like(img_data)
+			mask_data[img_data!=0] = 1
+			affine = img.affine
+			x_rng, y_rng, z_rng = nonempty_coordinate_range(mask_data)
+			x_space = np.round(np.linspace(x_rng[0]+10, x_rng[1]-10, numslices))
+			y_space = np.round(np.linspace(y_rng[0]+10, y_rng[1]-10, numslices))
+			z_space = np.round(np.linspace(z_rng[0]+10, z_rng[1]-10, numslices))
+			native_space = []
+			for i in range(len(x_space)):
+				native_space.append(nib.affines.apply_affine(affine,[x_space[i],y_space[i],z_space[i]]))
+			native_space = np.array(native_space)
+
+			x_space = x_space[1:-1]
+			y_space = y_space[1:-1]
+			z_space = z_space[1:-1]
+
+			# for parallelization
+			rand_value = str(np.random.randint(1,99999999)).zfill(8)
+			mask_name = rand_value + '_mask.png'
+			temp_masks.append(mask_name)
+
+			write_padded_png(mask_data, x_space, y_space, z_space, mask_name, cmap = 'binary_r')
+			correct_image(mask_name)
+
+
 		outname = input_image.replace('.nii','')
 		outname = outname.replace('.gz','')
 		outname = outname.replace('.','_')
 		outname = outname.replace('/','_') + ".png"
 		write_padded_png(img_data, x_space, y_space, z_space, outname,
 								cmap = cm_hide_lower(colourmapname))
+		mask_png(img_png = outname, mask_png = mask_name, remove_mask = False)
+		
 		if opts.addstatisticimage:
 			statmask_name = rand_value + '_stat.png'
 			if opts.setthreshold:
@@ -149,6 +194,7 @@ def run(opts):
 				thrs1 = autothreshold(aimg_data, thr_alg)[0]
 				thrs2 = autothreshold(aimg_data[aimg_data>thrs1], thr_alg)[0]
 			cmap_ry = linear_cm([1,0,0],[1,1,0])
+
 			write_padded_png(aimg_data, x_space, y_space, z_space, statmask_name, vmin = thrs1, vmax = thrs2, cmap = cmap_ry)
 			overlayname = os.path.basename(opts.addstatisticimage[0]).replace('/','_') + outname
 			overlayname = overlayname.replace('.nii','')
@@ -156,6 +202,15 @@ def run(opts):
 			outlay_png(img_png = outname, outlay_png = statmask_name, outname = overlayname, cleanup = True)
 			write_colorbar(threshold = [thrs1, thrs2], input_cmap = cmap_ry, name_cmap = overlayname[:-4], outtype = 'png', transparent = True)
 			outname = overlayname
+			if opts.statsneg:
+				cmap_blb = linear_cm([0,0,1],[0,1,1])
+				write_padded_png(aimg_data*-1, x_space, y_space, z_space, statmask_name, vmin = thrs1, vmax = thrs2, cmap = cmap_blb)
+				overlayname = os.path.basename(opts.addstatisticimage[0]).replace('/','_') + outname
+				overlayname = overlayname.replace('.nii','')
+				overlayname = overlayname.replace('.gz','')
+				outlay_png(img_png = outname, outlay_png = statmask_name, outname = overlayname, cleanup = True)
+				write_colorbar(threshold = [thrs1, thrs2], input_cmap = cmap_blb, name_cmap = "neg_" + overlayname[:-4], outtype = 'png', transparent = True)
+
 		elif opts.addoutlineimage:
 			draw_outline(outname, mask_name)
 			draw_outline(outname, lowmask_name)
@@ -163,7 +218,8 @@ def run(opts):
 			print("Mean white matter = %1.5e" % np.mean(img_data*low))
 			print("Mean grey matter = %1.5e" % np.mean(img_data*(mask_data-low)))
 		else:
-			draw_outline(outname, mask_name)
+			if not opts.nooutline:
+				draw_outline(outname, mask_name)
 		if opts.outputdir:
 			outdir = opts.outputdir[0]
 			if outdir[:-1] != '/':
@@ -172,7 +228,11 @@ def run(opts):
 			if opts.addstatisticimage:
 				os.system("mv %s_colorbar.png %s" % (overlayname[:-4], outdir))
 	# delete mask(s)
-	os.remove(mask_name)
+	if opts.nomask:
+		for mask_name in temp_masks:
+			os.remove(mask_name)
+	else:
+		os.remove(mask_name)
 	if opts.addoutlineimage:
 		if os.path.exists(lowmask_name):
 			os.remove(lowmask_name)

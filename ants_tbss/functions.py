@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib.colors as colors
 import scipy.misc as misc
+from matplotlib import cm
 from scipy import ndimage
 from skimage import filters
 
@@ -355,7 +356,7 @@ def autothreshold(data, threshold_type = 'yen', z = 2.3264):
 
 def draw_outline(img_png, mask_png, outline_color = [1,0,0,1], remove_mask = False):
 	"""
-	Create a read outline of a mask.
+	Create a red outline of a mask.
 	
 	Parameters
 	----------
@@ -384,6 +385,31 @@ def draw_outline(img_png, mask_png, outline_color = [1,0,0,1], remove_mask = Fal
 	m = ones_arr - binary_erosion(ones_arr)
 	index = (m[:,:] == 1)
 	img[index] = outline_color
+	if remove_mask:
+		os.remove(mask_png)
+	mpimg.imsave(img_png, img)
+
+def mask_png(img_png, mask_png, remove_mask = False):
+	"""
+	Masks a png img
+	
+	Parameters
+	----------
+	img_png : str
+		png file of image. e.g., brain.png
+	mask_png : str
+		png file of mask. e.g. brain_mask.png
+	remove_mask : bool
+		flag to delete mask_png
+	
+	Returns
+	-------
+	None
+	"""
+
+	img = mpimg.imread(img_png)
+	mask = mpimg.imread(mask_png)
+	img = img * mask
 	if remove_mask:
 		os.remove(mask_png)
 	mpimg.imsave(img_png, img)
@@ -501,7 +527,7 @@ def sym_pad_x(arr, max_size):
 	return arr
 
 
-def correct_image(img_name, b_transparent = True, rotate = None, flip = False, base_color = [0,0,0]):
+def correct_image(img_name, b_transparent = True, rotate = None, flip = False, base_color = [0,0,0], cmap = None):
 	"""
 	Remove black from png and over-writes it.
 	
@@ -517,12 +543,19 @@ def correct_image(img_name, b_transparent = True, rotate = None, flip = False, b
 		[optional] flip the image on the y-axis.
 	base_color : arr
 		default = [0,0,0] or black
-	
+	cmap : string
+		extract the base color from a cmap. i.e., base_color = cm.get_cmap(cmap, 256).colors[0]
 	Returns
 	-------
 	None
 	"""
-	img = misc.imread(img_name)
+	if cmap is not None:
+		# This will fail with gray color maps. The exempt is a dirty fix.
+		try:
+			base_color = cm.get_cmap(cmap, 256).colors[0][:3]
+		except:
+			base_color = [0,0,0]
+	img = mpimg.imread(img_name)
 	if b_transparent:
 		if img_name.endswith('.png'):
 			rows = img.shape[0]
@@ -533,16 +566,16 @@ def correct_image(img_name, b_transparent = True, rotate = None, flip = False, b
 				img_flat = img.reshape([rows * columns, 4])
 				img_flat = img_flat[:,:3]
 			alpha = np.zeros([rows*columns, 1], dtype=np.uint8)
-			alpha[img_flat[:,0]!=base_color[0]] = 255
-			alpha[img_flat[:,1]!=base_color[1]] = 255
-			alpha[img_flat[:,2]!=base_color[2]] = 255
+			alpha[img_flat[:,0]!=base_color[0]] = 1
+			alpha[img_flat[:,1]!=base_color[1]] = 1
+			alpha[img_flat[:,2]!=base_color[2]] = 1
 			img_flat = np.column_stack([img_flat, alpha])
 			img = img_flat.reshape([rows, columns, 4])
 	if rotate is not None:
 		img = ndimage.rotate(img, float(rotate))
 	if flip:
 		img = img[:,::-1,:]
-	misc.imsave(img_name, img)
+	mpimg.imsave(img_name, img)
 
 
 def write_padded_png(img_data, x_space, y_space, z_space, outname, vmin = None, vmax = None, cmap = None):
@@ -604,7 +637,7 @@ def write_padded_png(img_data, x_space, y_space, z_space, outname, vmin = None, 
 	mpimg.imsave(outname, mask_array,
 					vmin = vmin,
 					vmax = vmax,
-					cmap=cmap)
+					cmap = cmap)
 
 
 def linear_cm(c_start, c_end, c_mid = None, alpha = True, hide_lower = True, cmap_name = 'from_list', set_alpha = None):
